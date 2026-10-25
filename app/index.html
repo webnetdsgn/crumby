@@ -50,7 +50,9 @@ button,input,textarea{outline:none}
 h1,h2,h3,p{margin:0}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 
-.app{position:fixed;left:0;right:0;top:var(--vvt,0px);width:100%;height:var(--vvh,100%);max-width:480px;margin:0 auto;display:flex;flex-direction:column;overflow:hidden;background:var(--canvas);padding-top:env(safe-area-inset-top,0px)}
+.app{position:fixed;left:0;right:0;top:0;bottom:0;width:100%;max-width:480px;margin:0 auto;display:flex;flex-direction:column;overflow:hidden;background:var(--canvas);padding-top:env(safe-area-inset-top,0px)}
+html.short .app{bottom:auto;height:var(--fullh)}
+html.kb .app{bottom:auto;top:var(--vvt,0px);height:var(--vvh)}
 html.kb .tabbar{display:none}
 .screen.coachscreen{padding-bottom:28px}
 html.kb .screen.coachscreen{padding-bottom:10px}
@@ -309,7 +311,7 @@ input[type=range]:active::-webkit-slider-thumb{transform:scale(1.18)}
 
 /* floating tab bar */
 .tabbar[hidden]{display:none}
-.tabbar{display:flex;align-items:center;justify-content:space-around;margin:0 max(14px,env(safe-area-inset-right,0px)) calc(12px + env(safe-area-inset-bottom,0px)) max(14px,env(safe-area-inset-left,0px));padding:7px 6px;border-radius:32px;background:var(--card);box-shadow:0 16px 36px rgba(90,30,10,.35);position:relative;z-index:5}
+.tabbar{display:flex;align-items:center;justify-content:space-around;margin:0 max(14px,env(safe-area-inset-right,0px)) calc(6px + env(safe-area-inset-bottom,0px) * .6) max(14px,env(safe-area-inset-left,0px));padding:7px 6px;border-radius:32px;background:var(--card);box-shadow:0 16px 36px rgba(90,30,10,.35);position:relative;z-index:5}
 .tab{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;background:none;border:0;padding:7px 0 6px;border-radius:22px;font:600 10.5px var(--sans);color:var(--t3);transition:color .25s,background .25s}
 .tab .ico{transition:transform .4s var(--spring)}
 .tab.on{color:var(--t1);background:var(--card2)}
@@ -449,11 +451,16 @@ const nowT=()=>{const d=new Date();return pad(d.getHours())+':'+pad(d.getMinutes
 /* ---------- state + language ---------- */
 (function fitViewport(){
   const vv=window.visualViewport,root=document.documentElement;
+  const standalone=navigator.standalone===true||(window.matchMedia&&matchMedia('(display-mode: standalone)').matches);
   const fit=()=>{
-    const h=vv?vv.height:window.innerHeight,t=vv?vv.offsetTop:0;
-    root.style.setProperty('--vvh',Math.round(h)+'px');
-    root.style.setProperty('--vvt',Math.round(t)+'px');
-    root.classList.toggle('kb',!!vv&&window.innerHeight-vv.height>150);
+    const ih=window.innerHeight,kb=!!vv&&ih-vv.height>150;
+    const land=window.innerWidth>ih;
+    const full=land?Math.min(screen.width,screen.height):Math.max(screen.width,screen.height);
+    root.style.setProperty('--vvh',Math.round(vv?vv.height:ih)+'px');
+    root.style.setProperty('--vvt',Math.round(vv?vv.offsetTop:0)+'px');
+    root.style.setProperty('--fullh',full+'px');
+    root.classList.toggle('kb',kb);
+    root.classList.toggle('short',standalone&&!kb&&Math.min(screen.width,screen.height)<=500&&ih<full-20);
   };
   if(vv){vv.addEventListener('resize',fit);vv.addEventListener('scroll',fit)}
   window.addEventListener('resize',fit);window.addEventListener('orientationchange',fit);
@@ -479,7 +486,8 @@ if(/[?&]debug=1/.test(location.search)){
       'standalone '+(navigator.standalone===true||matchMedia('(display-mode: standalone)').matches),
       'app top '+Math.round(a.top)+' h '+Math.round(a.height),
       'tabbar '+(t?'bottom '+Math.round(t.bottom)+' gap '+Math.round(innerHeight-t.bottom)+' h '+Math.round(t.height):'hidden'),
-      '--vvh '+document.documentElement.style.getPropertyValue('--vvh')+' kb '+document.documentElement.classList.contains('kb')
+      '--vvh '+document.documentElement.style.getPropertyValue('--vvh')+' fullh '+document.documentElement.style.getPropertyValue('--fullh'),
+      'kb '+document.documentElement.classList.contains('kb')+' short '+document.documentElement.classList.contains('short')
     ].join('\n');
   };
   upd();setInterval(upd,400);
