@@ -12,7 +12,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Crumb">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700&family=Unbounded:wght@500;600;700&display=swap">
 <style>
 /* Layout: one phone-width column on a solid Claude-orange canvas. Ivory cards sit on it, slate is the ink. Always orange: the system dark mode is ignored; an optional "night" skin is a manual choice in Profile. */
@@ -51,17 +51,15 @@ h1,h2,h3,p{margin:0}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 
 .app{position:fixed;left:0;right:0;top:0;bottom:0;width:100%;max-width:480px;margin:0 auto;display:flex;flex-direction:column;overflow:hidden;background:var(--canvas);padding-top:env(safe-area-inset-top,0px)}
-html.short .app{bottom:auto;height:var(--fullh)}
 html.kb .app{bottom:auto;top:var(--vvt,0px);height:var(--vvh)}
 html.kb .tabbar{display:none}
-.screen.coachscreen{padding-bottom:28px}
 html.kb .screen.coachscreen{padding-bottom:10px}
 html.kb .screen.coachscreen .chiprow{display:none}
 @media (min-width:520px){body{background:var(--slate)}.app{box-shadow:0 0 0 1px rgba(255,255,255,.08)}}
 .stage{flex:1;min-height:0;display:flex;flex-direction:column;position:relative}
 .screen{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;
   padding-block:6px 24px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
-.screen.coachscreen{display:flex;flex-direction:column;overflow:hidden;padding-bottom:10px}
+.screen.coachscreen{display:flex;flex-direction:column;overflow:hidden;padding-bottom:28px}
 .view{animation:viewIn .55s var(--ease) both}
 @keyframes viewIn{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
 @keyframes rise{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
@@ -460,7 +458,6 @@ const nowT=()=>{const d=new Date();return pad(d.getHours())+':'+pad(d.getMinutes
     root.style.setProperty('--vvt',Math.round(vv?vv.offsetTop:0)+'px');
     root.style.setProperty('--fullh',full+'px');
     root.classList.toggle('kb',kb);
-    root.classList.toggle('short',standalone&&!kb&&Math.min(screen.width,screen.height)<=500&&ih<full-20);
   };
   if(vv){vv.addEventListener('resize',fit);vv.addEventListener('scroll',fit)}
   window.addEventListener('resize',fit);window.addEventListener('orientationchange',fit);
@@ -487,7 +484,7 @@ if(/[?&]debug=1/.test(location.search)){
       'app top '+Math.round(a.top)+' h '+Math.round(a.height),
       'tabbar '+(t?'bottom '+Math.round(t.bottom)+' gap '+Math.round(innerHeight-t.bottom)+' h '+Math.round(t.height):'hidden'),
       '--vvh '+document.documentElement.style.getPropertyValue('--vvh')+' fullh '+document.documentElement.style.getPropertyValue('--fullh'),
-      'kb '+document.documentElement.classList.contains('kb')+' short '+document.documentElement.classList.contains('short')
+      'kb '+document.documentElement.classList.contains('kb')
     ].join('\n');
   };
   upd();setInterval(upd,400);
