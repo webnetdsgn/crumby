@@ -105,7 +105,11 @@ async function gemini(req, env) {
   if (res.err) return json({ error: res.err }, res.err === 'timeout' ? 504 : 502);
   const r = res.r;
   if (r.status === 429) return json({ error: 'rate_limited' }, 429);
-  if (!r.ok) return json({ error: 'upstream', status: r.status }, 502);
+  if (!r.ok) {
+    let detail = '';
+    try { detail = (await r.text()).replace(/\s+/g, ' ').slice(0, 300); } catch { /* ignore */ }
+    return json({ error: 'upstream', status: r.status, detail }, 502);
+  }
 
   if (stream) {
     return new Response(r.body, {
@@ -117,6 +121,6 @@ async function gemini(req, env) {
   const d = await r.json();
   const parts = (d && d.candidates && d.candidates[0] && d.candidates[0].content && d.candidates[0].content.parts) || [];
   const text = parts.map((p) => p.text || '').join('').trim();
-  if (!text) return json({ error: 'empty', blocked: (d && d.promptFeedback && d.promptFeedback.blockReason) || null }, 502);
+  if (!text) return json({ error: 'empty', blocked: (d && d.promptFeedback && d.promptFeedback.blockReason) || null, finish: (d && d.candidates && d.candidates[0] && d.candidates[0].finishReason) || null }, 502);
   return json({ text, model, ms: Date.now() - t0, usage: (d && d.usageMetadata) || null });
 }

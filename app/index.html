@@ -749,7 +749,8 @@ const aiErr=c=>({
   session_expired:L('Нужно заново войти в Claude.','Please sign in to Claude again.'),
   bad_pass:L('Неверный или не введён код доступа. Введите его в профиле.','Wrong or missing access code. Enter it in Profile.'),
   no_key:L('На сервере не задан ключ Gemini.','The server has no Gemini key set.'),
-  timeout:L('Gemini отвечает слишком долго. Попробуйте ещё раз.','Gemini is taking too long. Try again.')
+  timeout:L('Gemini отвечает слишком долго. Попробуйте ещё раз.','Gemini is taking too long. Try again.'),
+  too_large:L('Фото слишком большое. Попробуйте другое или снимите ближе.','The photo is too large. Try another one or shoot closer.')
 })[c];
 const foodRules=()=>`You are a nutritionist inside a calorie-tracking app. Estimate the meal and reply with ONLY JSON, no prose, no markdown:
 {"title":"short name","items":[{"name":"food or dish","grams":number,"kcal":number,"p":number,"f":number,"c":number,"sugar":number,"fiber":number}],"confidence":number from 0 to 1,"note":"one short sentence: what is not obvious or what you assumed","questions":[{"q":"short question","options":["answer","answer"]}]}
@@ -772,14 +773,28 @@ function mockFood(txt){
   if(/орех|яблок|банан|печень|шоколад|конфет|чипс|йогурт|nut|apple|banana|cookie|chocolate|candy|chips|yogurt/.test(s))return{title:L('Перекус','Snack'),items:[{name:L('Горсть орехов, 30 г','Handful of nuts, 30 g'),grams:30,kcal:180,p:6,f:16,c:6,sugar:1,fiber:2},{name:L('Яблоко','Apple'),grams:150,kcal:80,p:0,f:0,c:19,sugar:15,fiber:3}],confidence:.8,note:L('Порции оценены по типичной горсти.','Portions are estimated from a typical handful.'),questions:[]};
   return{title:L('Паста с курицей','Pasta with chicken'),items:[{name:L('Паста, 220 г готовой','Pasta, 220 g cooked'),grams:220,kcal:340,p:12,f:2,c:68,sugar:3,fiber:4},{name:L('Курица, 90 г','Chicken, 90 g'),grams:90,kcal:150,p:28,f:3,c:0,sugar:0,fiber:0},{name:L('Сливочный соус','Cream sauce'),grams:60,kcal:130,p:2,f:12,c:4,sugar:2,fiber:0}],confidence:.62,note:L('Соус и масло дают около четверти калорий блюда.','Sauce and oil add about a quarter of the dish’s calories.'),questions:[{q:L('Соус сливочный?','Is the sauce creamy?'),options:[L('Да','Yes'),L('Томатный','Tomato'),L('Без соуса','No sauce')]},{q:L('Сколько ели?','How much did you eat?'),options:[L('Целую тарелку','The whole plate'),L('Половину','Half')]}]};
 }
+function loadImg(file){
+  return new Promise((res,rej)=>{
+    const u=URL.createObjectURL(file),im=new Image();
+    im.onload=()=>{URL.revokeObjectURL(u);res(im)};
+    im.onerror=()=>{URL.revokeObjectURL(u);rej(new Error('img'))};
+    im.src=u;
+  });
+}
 async function prepImage(file){
+  let out=file;
   try{
-    const bmp=await createImageBitmap(file,{imageOrientation:'from-image'});
-    const sc=Math.min(1,1280/Math.max(bmp.width,bmp.height));
-    const c=document.createElement('canvas');c.width=Math.round(bmp.width*sc);c.height=Math.round(bmp.height*sc);
-    c.getContext('2d').drawImage(bmp,0,0,c.width,c.height);
-    return await new Promise(res=>c.toBlob(b=>res(b||file),'image/jpeg',.86));
-  }catch(e){return file}
+    const im=await loadImg(file),w0=im.naturalWidth,h0=im.naturalHeight;
+    if(w0&&h0){
+      const sc=Math.min(1,1280/Math.max(w0,h0)),c=document.createElement('canvas');
+      c.width=Math.max(1,Math.round(w0*sc));c.height=Math.max(1,Math.round(h0*sc));
+      c.getContext('2d').drawImage(im,0,0,c.width,c.height);
+      const blob=await new Promise(res=>c.toBlob(b=>res(b),'image/jpeg',.85));
+      if(blob&&blob.size>0)out=blob;
+    }
+  }catch(e){}
+  if(out.size>3500000)throw{code:'too_large'};
+  return out;
 }
 function blobToB64(b){return new Promise((res,rej)=>{const fr=new FileReader();fr.onload=()=>res(String(fr.result).split(',')[1]||'');fr.onerror=rej;fr.readAsDataURL(b)})}
 function parseJSON(t){
@@ -788,7 +803,8 @@ function parseJSON(t){
   if(m){try{return JSON.parse(m[0])}catch(e){}}
   throw{code:'invalid_json'};
 }
-const errCode=(status,j)=>j&&j.error==='bad_pass'?'bad_pass':(status===429||(j&&j.error==='rate_limited'))?'rate_limited':j&&j.error==='no_key'?'no_key':(j&&j.error==='timeout')?'timeout':j&&j.error==='empty'?'refused':'upstream_error';
+const errDetail=(status,j)=>[j&&j.status?'Gemini '+j.status:(status?'HTTP '+status:''),j&&j.finish?'finish '+j.finish:'',j&&j.detail?String(j.detail).slice(0,160):''].filter(Boolean).join(' · ');
+const errCode=(status,j)=>j&&j.error==='too_large'?'too_large':j&&j.error==='bad_pass'?'bad_pass':(status===429||(j&&j.error==='rate_limited'))?'rate_limited':j&&j.error==='no_key'?'no_key':(j&&j.error==='timeout')?'timeout':j&&j.error==='empty'?'refused':'upstream_error';
 async function gem({system,messages,image,json,signal,maxTokens,timeoutMs=45000}){
   const t0=performance.now();
   const ctl=new AbortController();let timedOut=false;
@@ -805,7 +821,7 @@ async function gem({system,messages,image,json,signal,maxTokens,timeoutMs=45000}
     if(e&&e.name==='AbortError')throw{code:'cancelled'};
     throw{code:'upstream_error'};
   }finally{clearTimeout(tm)}
-  if(!r.ok)throw{code:errCode(r.status,j)};
+  if(!r.ok)throw{code:errCode(r.status,j),detail:errDetail(r.status,j)};
   AIDBG='ai '+Math.round(performance.now()-t0)+'ms'+(j.usage?' think '+(j.usage.thoughtsTokenCount||0)+' out '+(j.usage.candidatesTokenCount||0):'');
   return j.text;
 }
@@ -818,7 +834,7 @@ async function gemStream({system,messages,maxTokens,onText,timeoutMs=60000}){
     let r;
     try{r=await fetch('/api/gemini',{method:'POST',headers:{'content-type':'application/json','x-crumb-pass':getPass()},body:JSON.stringify({system,messages,maxTokens,stream:true}),signal:ctl.signal})}
     catch(e){throw{code:timedOut?'timeout':'upstream_error'}}
-    if(!r.ok){let j={};try{j=await r.json()}catch(e){}throw{code:errCode(r.status,j)}}
+    if(!r.ok){let j={};try{j=await r.json()}catch(e){}throw{code:errCode(r.status,j),detail:errDetail(r.status,j)}}
     const reader=r.body.getReader(),dec=new TextDecoder();let buf='';
     try{
       for(;;){
@@ -851,8 +867,8 @@ async function askFood(kind){
       const ctl=sh.ctl=new AbortController();
       if(kind==='photo'){
         const blob=await prepImage(sh.file);
-        raw=parseJSON(await gem({system:foodRules()+ctxLine(),messages:[{role:'user',text:'The photo shows a meal. Identify the dishes and estimate portions from the size of the plate and cutlery.'}],image:blob,json:true,maxTokens:1500,signal:ctl.signal}));
-      }else raw=parseJSON(await gem({system:foodRules()+ctxLine(),messages:[{role:'user',text:'Description: "'+sh.text.trim()+'"'}],json:true,maxTokens:1500,signal:ctl.signal}));
+        raw=parseJSON(await gem({system:foodRules()+ctxLine(),messages:[{role:'user',text:'The photo shows a meal. Identify the dishes and estimate portions from the size of the plate and cutlery.'}],image:blob,json:true,maxTokens:2500,signal:ctl.signal}));
+      }else raw=parseJSON(await gem({system:foodRules()+ctxLine(),messages:[{role:'user',text:'Description: "'+sh.text.trim()+'"'}],json:true,maxTokens:2500,signal:ctl.signal}));
     }
     else if(!SAMPLE){await sleep(1700);raw=mockFood(sh.text);sh.demo=true}
     else{
@@ -868,7 +884,7 @@ async function askFood(kind){
     const t=sh.day===todayKey()?nowT():'12:00',tot=sumItems(f.items);
     sh.draft=Object.assign(f,{src:kind,t,type:guessType(tot.kcal,t)});
     sh.view='result';
-  }catch(e){if(!e||e.code!=='cancelled')sh.err=aiErr(e&&e.code)||L('Не получилось оценить. Попробуйте ещё раз.','Couldn’t estimate that. Try again.')}
+  }catch(e){if(!e||e.code!=='cancelled')sh.err=(aiErr(e&&e.code)||L('Не получилось оценить. Попробуйте ещё раз.','Couldn’t estimate that. Try again.'))+(e&&e.detail?' ['+e.detail+']':'')}
   finally{sh.busy=false;stopTicker();if(sh)paintSheet()}
 }
 async function askFix(text){
@@ -878,7 +894,7 @@ async function askFix(text){
     let raw;
     if(!SAMPLE&&BACKEND){
       const cur={title:sh.draft.title,items:sh.draft.items.map(i=>({name:i.name,grams:Math.round(i.grams*i.s),kcal:Math.round(i.kcal*i.s),p:i.p*i.s,f:i.f*i.s,c:i.c*i.s,sugar:i.sugar*i.s,fiber:i.fiber*i.s}))};
-      raw=parseJSON(await gem({system:foodRules()+ctxLine(),messages:[{role:'user',text:'Previous estimate (JSON):\n'+JSON.stringify(cur)+'\nThe user corrects it: "'+text.trim()+'"\nUpdate the estimate with the correction and return JSON in the same format. If the correction answers a question, drop that question.'}],json:true,maxTokens:1500}));
+      raw=parseJSON(await gem({system:foodRules()+ctxLine(),messages:[{role:'user',text:'Previous estimate (JSON):\n'+JSON.stringify(cur)+'\nThe user corrects it: "'+text.trim()+'"\nUpdate the estimate with the correction and return JSON in the same format. If the correction answers a question, drop that question.'}],json:true,maxTokens:2500}));
     }
     else if(!SAMPLE){await sleep(1200);raw=mockFood(text);sh.demo=true}
     else{
@@ -889,7 +905,7 @@ async function askFix(text){
     if(!f.items.length)throw{code:'empty'};
     sh.draft=Object.assign(sh.draft,{title:f.title,items:f.items,conf:f.conf,note:f.note,questions:f.questions});
     sh.fix='';
-  }catch(e){sh.err=aiErr(e&&e.code)||L('Не получилось поправить. Попробуйте ещё раз.','Couldn’t apply that. Try again.')}
+  }catch(e){sh.err=(aiErr(e&&e.code)||L('Не получилось поправить. Попробуйте ещё раз.','Couldn’t apply that. Try again.'))+(e&&e.detail?' ['+e.detail+']':'')}
   finally{sh.fixBusy=false;if(sh)paintSheet()}
 }
 const sumItems=items=>items.reduce((t,i)=>{t.kcal+=i.kcal*i.s;t.p+=i.p*i.s;t.f+=i.f*i.s;t.c+=i.c*i.s;t.sugar+=i.sugar*i.s;t.fiber+=i.fiber*i.s;return t},{kcal:0,p:0,f:0,c:0,sugar:0,fiber:0});
