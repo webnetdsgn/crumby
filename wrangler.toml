@@ -1,0 +1,14 @@
+# Crumb: одна точка деплоя. Worker отдаёт приложение из ./app и проксирует /api/gemini.
+name = "crumby"
+main = "worker/index.js"
+compatibility_date = "2025-09-01"
+
+[assets]
+directory = "./app"
+binding = "ASSETS"
+run_worker_first = ["/api/*"]
+
+# Секреты не хранятся в репозитории. Задаются в панели Cloudflare:
+#   GEMINI_API_KEY  ключ Gemini API
+#   APP_PASSCODE    код доступа, который вводится в приложении
+# Необязательная переменная GEMINI_MODEL меняет модель без правки кода.

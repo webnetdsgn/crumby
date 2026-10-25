@@ -1,0 +1,302 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<style>html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}[hidden]{display:none!important}</style>
+<title>Crumb: названия и оформление</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="theme-color" content="#D97757">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700&family=Unbounded:wght@500;600;700&display=swap">
+<style>
+/* Layout: one long board on a solid Claude-orange canvas. Intro, 12 name+logo tiles, then 12 phone mockups. Always orange, no dark mode. */
+:root{
+  --or:#D97757; --deep:#C15F3C; --slate:#141413; --ivory:#FAF9F5; --oat:#F0EEE6; --peach:#F2C9B5;
+  --t1:#141413; --t2:rgba(20,20,19,.76); --t3:#85837B; --cd2:#5E5D59;
+  --disp:'Unbounded','Onest',system-ui,sans-serif; --sans:'Onest',system-ui,-apple-system,sans-serif;
+  --shadow:0 1px 0 rgba(20,20,19,.05),0 14px 30px rgba(120,45,20,.24);
+  color-scheme:light;
+}
+*{box-sizing:border-box}
+html{background:var(--or)}
+body{margin:0;background:var(--or);color:var(--t1);font:15px/1.5 var(--sans);-webkit-font-smoothing:antialiased;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:20px 70px}
+.wrap{max-width:1100px;margin:0 auto}
+h1,h2,h3,p{margin:0}
+.eyebrow{font:700 11px/1 var(--sans);letter-spacing:.1em;text-transform:uppercase;color:var(--t2)}
+.hero{padding:18px 0 8px;display:flex;flex-direction:column;gap:14px;max-width:660px}
+.hero h1{font:600 32px/1.1 var(--disp);letter-spacing:-.035em;text-wrap:balance}
+.hero p{color:var(--t2);font-size:16px;text-wrap:pretty}
+.how{display:flex;flex-wrap:wrap;gap:8px;margin-top:4px}
+.how span{padding:8px 14px;border-radius:18px;background:rgba(250,249,245,.45);font-size:13.5px}
+.how b{font-weight:700}
+h2.sec{font:600 22px/1.15 var(--disp);letter-spacing:-.03em;margin:46px 0 8px}
+.secsub{color:var(--t2);max-width:640px;margin-bottom:22px;text-wrap:pretty}
+.grid{display:grid;gap:16px;grid-template-columns:repeat(auto-fill,minmax(250px,1fr))}
+.tile{background:var(--ivory);border-radius:28px;padding:18px;display:flex;flex-direction:column;gap:14px;box-shadow:var(--shadow);min-width:0;color:var(--slate)}
+.tile .top{display:flex;align-items:center;justify-content:space-between}
+.num{display:inline-grid;place-items:center;min-height:28px;padding:0 11px;border-radius:14px;background:var(--oat);font:700 12px var(--sans);color:var(--cd2)}
+.pick{background:var(--slate);color:var(--ivory)}
+.icon{width:96px;height:96px;border-radius:26px;display:grid;place-items:center;flex:none;box-shadow:0 10px 22px rgba(20,20,19,.2)}
+.icon svg{width:62px;height:62px;display:block}
+.lockup{display:flex;align-items:center;gap:14px}
+.lockup .wm{font:600 26px/1 var(--disp);letter-spacing:-.04em;overflow-wrap:anywhere}
+.mean{color:var(--cd2);font-size:14px}
+.tag{font-size:12.5px;color:var(--t3)}
+.dcard{display:flex;flex-direction:column;align-items:center;gap:16px;background:var(--ivory);border-radius:32px;padding:26px 16px 20px;box-shadow:var(--shadow);min-width:0;color:var(--slate)}
+.cap{align-self:stretch;display:flex;flex-direction:column;gap:7px}
+.cap .row{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.cap b{font:600 17px/1.15 var(--disp);letter-spacing:-.03em}
+.cap p{font-size:13.5px;color:var(--cd2);text-wrap:pretty}
+.fav{border:0;background:var(--oat);color:var(--cd2);width:38px;height:38px;border-radius:50%;display:grid;place-items:center;cursor:pointer;transition:transform .25s cubic-bezier(.32,.72,0,1),background .2s}
+.fav:active{transform:scale(.86)}
+.fav.on{background:var(--or);color:var(--slate)}
+.fav svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+.fav.on svg{fill:currentColor}
+.short{position:sticky;bottom:12px;margin-top:30px;display:flex;justify-content:center;pointer-events:none}
+.short div{pointer-events:auto;background:var(--slate);color:var(--ivory);padding:12px 20px;border-radius:24px;font:600 14px var(--sans);box-shadow:var(--shadow)}
+.rec{margin-top:28px;padding:20px;border-radius:28px;background:var(--slate);color:var(--ivory);display:flex;flex-direction:column;gap:8px}
+.rec .eyebrow{color:#EBA58C}
+.rec b{font-weight:700}
+
+/* ---------- phone mockups (fixed colours) ---------- */
+.ph{--ink:#141413;--ivory:#FAF9F5;--or:#D97757;--deep:#C15F3C;--oat:#F0EEE6;--kraft:#D9B99B;--olive:#788C5D;--fig:#C46686;--sky:#6A9BCB;--coral:#EBCECE;--peach:#F2C9B5;
+  position:relative;width:280px;height:572px;flex:none;border-radius:42px;overflow:hidden;font:12px/1.35 var(--sans);color:var(--ink);background:var(--or);
+  box-shadow:0 0 0 7px #141413,0 0 0 8px #3a3a37,0 22px 40px rgba(20,20,19,.3)}
+.ph *{box-sizing:border-box}
+.ph b{font-weight:700}
+.ph .sb{position:absolute;top:0;left:0;right:0;height:34px;padding:12px 24px 0;display:flex;justify-content:space-between;font:700 11px var(--sans);z-index:3}
+.ph .sb i{display:block;width:20px;height:9px;border-radius:3px;border:1.4px solid currentColor;position:relative;margin-top:2px}
+.ph .sb i::after{content:"";position:absolute;inset:1.5px;right:5px;background:currentColor;border-radius:1px}
+.ph .hb{position:absolute;bottom:6px;left:50%;width:96px;height:4px;border-radius:2px;background:currentColor;opacity:.4;transform:translateX(-50%);z-index:5}
+.ph .tb{position:absolute;left:14px;right:14px;bottom:16px;height:52px;border-radius:26px;background:var(--ivory);box-shadow:0 10px 22px rgba(90,30,10,.35);display:flex;justify-content:space-around;align-items:center;z-index:4;padding:0 8px}
+.ph .tb span{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;font-size:13px;color:#85837B}
+.ph .tb span.on{background:var(--oat);color:var(--ink)}
+.ph .tb .ad{width:42px;height:42px;margin-top:-22px;background:var(--ink);color:var(--ivory);font:400 22px/1 var(--sans);box-shadow:0 0 0 5px var(--or)}
+.ph .u{font-family:var(--disp);letter-spacing:-.03em;font-weight:600}
+.dot{display:inline-block;width:7px;height:7px;border-radius:50%}
+.rowl{display:flex;justify-content:space-between;align-items:center;gap:8px}
+
+/* d1 canvas (the prototype) */
+.d1 .t{padding:46px 20px 0}
+.d1 .t small{font:700 9.5px var(--sans);letter-spacing:.09em;text-transform:uppercase;opacity:.75}
+.d1 .t h3{font:600 20px var(--disp);letter-spacing:-.03em;margin:4px 0 0}
+.d1 .cd{margin:12px 14px 0;padding:14px;border-radius:24px;background:var(--ivory);box-shadow:0 12px 24px rgba(90,30,10,.25)}
+.d1 .rg{position:relative;width:128px;height:128px;margin:0 auto}
+.d1 .rg div{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.d1 .rg b{font:600 28px/1 var(--disp);letter-spacing:-.03em}
+.d1 .rg small{font-size:9.5px;color:#85837B}
+.d1 .m{display:flex;gap:8px;margin-top:10px}
+.d1 .m div{flex:1;font-size:9.5px;color:#85837B}
+.d1 .m i{display:block;height:5px;border-radius:3px;background:var(--oat);margin-top:4px;overflow:hidden}
+.d1 .m u{display:block;height:100%}
+.d1 .sn{margin:9px 14px 0;padding:11px 14px;border-radius:20px;background:var(--ivory);display:flex;justify-content:space-between;align-items:center}
+.d1 .sn .bt{padding:7px 12px;border-radius:14px;background:var(--ink);color:var(--ivory);font-weight:700;font-size:10.5px}
+/* d2 clay hero */
+.d2 .h{padding:50px 22px 0;color:var(--ink)}
+.d2 .h small{font:700 9.5px var(--sans);letter-spacing:.09em;text-transform:uppercase;opacity:.75}
+.d2 .h .n{font:600 62px/1 var(--disp);letter-spacing:-.04em;color:var(--ivory);margin-top:14px;display:block}
+.d2 .h span.k{display:block;margin-top:6px;font-weight:600}
+.d2 .pl{display:flex;gap:6px;margin-top:14px}
+.d2 .pl div{flex:1;padding:8px 9px;border-radius:14px;background:rgba(250,249,245,.35)}
+.d2 .pl small{display:block;font-size:9px;opacity:.75}
+.d2 .sh{position:absolute;left:0;right:0;bottom:0;height:290px;background:var(--ivory);border-radius:34px 34px 0 0;padding:18px 18px 0}
+.d2 .sh h4{margin:0 0 6px;font:600 13px var(--disp);letter-spacing:-.03em}
+.d2 .r{display:flex;justify-content:space-between;padding:8px 0;border-top:1px solid #E8E4D8}
+.d2 .r small{display:block;color:#85837B;font-size:10px}
+/* d3 night */
+.d3{background:#161615;color:var(--ivory)}
+.d3 .sb{color:var(--ivory)}
+.d3 .t{padding:46px 20px 0;display:flex;justify-content:space-between;align-items:flex-end}
+.d3 .t h3{font:600 20px var(--disp);letter-spacing:-.03em;margin:0}
+.d3 .big{margin:14px 14px 0;padding:18px;border-radius:30px;background:var(--or);color:var(--ink)}
+.d3 .big .n{font:600 54px/1 var(--disp);letter-spacing:-.04em;margin-top:8px;display:block}
+.d3 .big .bar{height:8px;border-radius:4px;background:rgba(20,20,19,.2);margin-top:14px;overflow:hidden}
+.d3 .big .bar i{display:block;width:22%;height:100%;background:var(--ink);border-radius:4px}
+.d3 .g{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin:9px 14px 0}
+.d3 .g div{padding:13px;border-radius:22px;background:#262624}
+.d3 .g small{color:#948F86;display:block}
+.d3 .tb{background:#262624}
+.d3 .tb span{color:#948F86}.d3 .tb span.on{background:#3A3A36;color:var(--ivory)}
+.d3 .tb .ad{background:var(--or);color:var(--ink);box-shadow:0 0 0 5px #161615}
+.d3 .hb{color:var(--ivory)}
+/* d4 bento */
+.d4 .t{padding:48px 18px 0}
+.d4 .t h3{font:600 20px var(--disp);letter-spacing:-.03em;margin:0}
+.d4 .bn{display:grid;grid-template-columns:1fr 1fr;grid-auto-rows:88px;gap:8px;padding:12px 14px 0}
+.d4 .bn div{border-radius:24px;padding:12px;overflow:hidden}
+.d4 .bn .a{grid-column:span 2;grid-row:span 2;background:var(--ink);color:var(--ivory)}
+.d4 .bn .a .n{font:600 50px/1 var(--disp);letter-spacing:-.04em;display:block;margin-top:12px}
+.d4 .bn small{opacity:.7;font-size:10.5px}
+.d4 .bn .b{background:var(--sky);color:var(--ink)}.d4 .bn .c{background:var(--olive);color:var(--ivory)}.d4 .bn .d{background:var(--ivory)}.d4 .bn .e{background:var(--peach)}
+.d4 .bn big{display:block;margin-top:6px;font:600 17px var(--disp);letter-spacing:-.03em}
+/* d5 type */
+.d5 .t{padding:52px 22px 0;font:700 10px var(--sans);letter-spacing:.1em;text-transform:uppercase;opacity:.75}
+.d5 .n{padding:12px 18px 0;font:600 78px/.95 var(--disp);letter-spacing:-.05em;color:var(--ivory)}
+.d5 .k{padding:8px 22px 0;font-weight:600;font-size:13px}
+.d5 .ls{padding:26px 22px 0}
+.d5 .ls div{display:flex;align-items:baseline;gap:6px;padding:8px 0;font-size:13px}
+.d5 .ls div::after{content:"";order:1;flex:1;border-bottom:1.5px dotted rgba(20,20,19,.45)}
+.d5 .ls span{order:0}.d5 .ls b{order:2}
+/* d6 plate */
+.d6 .t{padding:48px 20px 0;text-align:center}
+.d6 .t h3{font:600 18px var(--disp);letter-spacing:-.03em;margin:0}
+.d6 .p{margin:16px auto 0;width:214px;height:214px;border-radius:50%;background:var(--ivory);box-shadow:0 18px 34px rgba(90,30,10,.35),inset 0 0 0 8px var(--oat);display:grid;place-items:center;position:relative}
+.d6 .p::before{content:"";width:152px;height:152px;border-radius:50%;background:conic-gradient(var(--olive) 0 22%,var(--fig) 22% 40%,var(--or) 40% 100%);-webkit-mask:radial-gradient(circle,transparent 58%,#000 59%);mask:radial-gradient(circle,transparent 58%,#000 59%)}
+.d6 .p div{position:absolute;text-align:center}
+.d6 .p b{font:600 30px/1 var(--disp);letter-spacing:-.03em;display:block}
+.d6 .lg{display:flex;justify-content:center;gap:12px;margin-top:16px;font-size:11px;font-weight:600}
+.d6 .lg span{display:flex;align-items:center;gap:5px}
+.d6 .cd{margin:12px 14px 0;padding:12px 16px;border-radius:20px;background:var(--ivory);display:flex;justify-content:space-between}
+/* d7 chat */
+.d7 .t{padding:46px 18px 8px;display:flex;justify-content:space-between;align-items:center}
+.d7 .t h3{font:600 18px var(--disp);letter-spacing:-.03em;margin:0}
+.d7 .ms{padding:8px 14px;display:flex;flex-direction:column;gap:9px}
+.d7 .us{align-self:flex-end;width:150px;border-radius:22px 22px 6px 22px;overflow:hidden;background:var(--ink);color:var(--ivory)}
+.d7 .us i{display:block;height:92px;background:linear-gradient(135deg,#D9B99B,#788C5D 55%,#F2C9B5)}
+.d7 .us p{margin:0;padding:8px 12px}
+.d7 .ai{align-self:flex-start;max-width:214px;background:var(--ivory);border-radius:22px 22px 22px 6px;padding:12px 14px;box-shadow:0 8px 18px rgba(90,30,10,.22)}
+.d7 .ai .k{font:600 22px/1 var(--disp);letter-spacing:-.03em}
+.d7 .ch{display:flex;gap:6px;margin-top:9px}
+.d7 .ch span{padding:6px 11px;border-radius:14px;background:var(--oat);font-size:11px;font-weight:600}
+.d7 .ch span.on{background:var(--ink);color:var(--ivory)}
+.d7 .cm{position:absolute;left:14px;right:14px;bottom:18px;height:46px;border-radius:23px;background:var(--ivory);display:flex;align-items:center;padding:0 6px 0 18px;color:#85837B;justify-content:space-between;box-shadow:0 10px 22px rgba(90,30,10,.3)}
+.d7 .cm b{width:34px;height:34px;border-radius:50%;background:var(--ink);display:grid;place-items:center;color:var(--ivory)}
+/* d8 receipt */
+.d8 .rc{position:absolute;top:44px;left:18px;right:18px;bottom:30px;background:#FBFAF5;padding:18px 16px;font:11px/1.4 ui-monospace,'SF Mono',Menlo,monospace;color:#2a2a28;box-shadow:0 14px 28px rgba(90,30,10,.35);
+  -webkit-mask:linear-gradient(#000,#000) top/100% calc(100% - 8px) no-repeat,conic-gradient(from -45deg at bottom,#0000,#000 1deg 89deg,#0000 90deg) bottom/16px 8px repeat-x;mask:linear-gradient(#000,#000) top/100% calc(100% - 8px) no-repeat,conic-gradient(from -45deg at bottom,#0000,#000 1deg 89deg,#0000 90deg) bottom/16px 8px repeat-x}
+.d8 .rc h3{margin:0;text-align:center;font:700 15px ui-monospace,Menlo,monospace;letter-spacing:.14em}
+.d8 .rc .c{text-align:center;color:#85837B;margin:2px 0 10px}
+.d8 .rc hr{border:0;border-top:1.5px dashed #bdb7a6;margin:8px 0}
+.d8 .rc .r{display:flex;justify-content:space-between;padding:2px 0}
+.d8 .rc .sn{color:var(--deep)}
+.d8 .rc .tt{font-size:14px;font-weight:700}
+/* d9 water */
+.d9 .lq{position:absolute;left:0;right:0;bottom:0;height:46%;background:var(--sky)}
+.d9 .lq svg{position:absolute;top:-17px;left:0;width:100%;height:18px;fill:var(--sky)}
+.d9 .lq::after{content:"";position:absolute;inset:0;background:linear-gradient(to bottom,rgba(255,255,255,.2),rgba(20,20,19,.14))}
+.d9 .t{position:relative;padding:50px 22px 0;z-index:2}
+.d9 .t small{font-weight:700;opacity:.75}
+.d9 .t .n{font:600 62px/1 var(--disp);letter-spacing:-.04em;margin-top:8px;color:var(--ivory);display:block}
+.d9 .wb{position:absolute;left:18px;right:18px;bottom:92px;z-index:2;color:var(--ink)}
+.d9 .wb b.n{font:600 26px var(--disp);letter-spacing:-.03em}
+.d9 .wb .bt{display:flex;gap:8px;margin-top:10px}
+.d9 .wb .bt span{flex:1;text-align:center;padding:10px 0;border-radius:16px;background:rgba(250,249,245,.5);font-weight:700}
+/* d10 sunset */
+.d10{background:linear-gradient(170deg,#B8502F 0%,#D97757 34%,#EBA58C 66%,#F6D9C8 100%)}
+.d10 .t{padding:50px 22px 0;color:var(--ivory)}
+.d10 .t h3{font:600 22px var(--disp);letter-spacing:-.03em;margin:0}
+.d10 .gl{margin:14px 16px 0;padding:18px;border-radius:30px;background:rgba(250,249,245,.7);box-shadow:0 14px 30px rgba(90,30,10,.28),inset 0 0 0 1px rgba(255,255,255,.7);display:flex;flex-direction:column;align-items:center;gap:8px}
+.d10 .gl .n{font:600 44px/1 var(--disp);letter-spacing:-.03em}
+.d10 .gl .bar{width:100%;height:9px;border-radius:5px;background:rgba(20,20,19,.12);overflow:hidden}
+.d10 .gl .bar i{display:block;height:100%;width:22%;background:var(--deep);border-radius:5px}
+.d10 .r2{display:flex;gap:8px;margin:9px 16px 0}
+.d10 .r2 div{flex:1;padding:12px;border-radius:22px;background:rgba(250,249,245,.7)}
+/* d11 coral */
+.d11 .t{padding:48px 22px 0}
+.d11 .t h3{font:600 22px var(--disp);letter-spacing:-.03em;margin:0}
+.d11 .cd{margin:12px 14px 0;padding:18px;border-radius:34px;background:var(--fig);color:var(--ivory)}
+.d11 .cd .n{font:600 50px/1 var(--disp);letter-spacing:-.04em;display:block;margin-top:6px}
+.d11 .cd .pl{display:flex;gap:6px;margin-top:12px}
+.d11 .cd .pl span{padding:6px 11px;border-radius:14px;background:rgba(255,255,255,.22);font-size:11px;font-weight:700}
+.d11 .r2{display:flex;gap:9px;margin:9px 14px 0}
+.d11 .r2 div{flex:1;padding:14px;border-radius:26px}
+/* d12 timeline */
+.d12 .t{padding:46px 20px 8px;display:flex;justify-content:space-between;align-items:flex-end}
+.d12 .t h3{font:600 18px var(--disp);letter-spacing:-.03em;margin:0}
+.d12 .t b.k{font:600 26px/1 var(--disp);letter-spacing:-.03em;color:var(--ivory)}
+.d12 .sg{margin:0 20px;display:flex;height:10px;border-radius:5px;overflow:hidden;gap:2px;background:rgba(250,249,245,.35)}
+.d12 .sg i{display:block;height:100%;border-radius:4px}
+.d12 .cd{margin:14px 14px 0;padding:16px 14px 6px;border-radius:26px;background:var(--ivory);box-shadow:0 12px 24px rgba(90,30,10,.25)}
+.d12 .tl{position:relative;padding-left:46px}
+.d12 .tl::before{content:"";position:absolute;left:38px;top:4px;bottom:10px;width:2px;background:#E8E4D8}
+.d12 .ev{position:relative;padding:0 0 11px}
+.d12 .ev time{position:absolute;left:-46px;top:2px;font-size:10px;color:#85837B;width:32px;text-align:right}
+.d12 .ev::before{content:"";position:absolute;left:-13px;top:3px;width:12px;height:12px;border-radius:50%;background:var(--ink);box-shadow:0 0 0 3px var(--ivory)}
+.d12 .ev.s::before{width:9px;height:9px;left:-11.5px;top:5px;background:var(--or)}
+.d12 .ev.s b{font-weight:600;font-size:11.5px}
+.d12 .ev.s span{font-size:11px;color:var(--deep);font-weight:700}
+.d12 .ev div{display:flex;justify-content:space-between;gap:8px}
+</style>
+</head>
+<body>
+
+
+<div class="wrap">
+  <header class="hero">
+    <span class="eyebrow">Пакет идентичности · версия 2</span>
+    <h1>Как будет называться и выглядеть Crumb</h1>
+    <p>Двенадцать названий с логотипами и двенадцать вариантов главного экрана. Всё в оранжевой гамме Claude: оранжевый холст, светлые карточки, графитовый шрифт.</p>
+    <div class="how"><span><b>Как выбрать.</b> Нажмите на сердечко у понравившихся и напишите мне номера.</span><span>Названия: <b>N1–N12</b></span><span>Экраны: <b>D1–D12</b></span></div>
+  </header>
+
+  <h2 class="sec" id="names">Названия и логотипы</h2>
+  <p class="secsub">Идея бренда: «крошка» как единица учёта. Мы считаем то, что другие приложения теряют. Наличие этих названий в App Store, доменов и товарных знаков я не проверял, это нужно сделать до выбора.</p>
+  <div class="grid" id="names-grid"></div>
+
+  <h2 class="sec" id="designs">Оформление главного экрана</h2>
+  <p class="secsub">Одни и те же данные (осталось 1 320 из 1 700 ккал, два перекуса, вода), поданные по-разному. D1 — это то, что сейчас собрано в рабочем прототипе.</p>
+  <div class="grid" id="designs-grid" style="grid-template-columns:repeat(auto-fill,minmax(310px,1fr))"></div>
+
+  <div class="rec"><span class="eyebrow">Моя рекомендация</span><p><b>Названия:</b> N1 Crumb (история про крошки работает на продукт), N3 Tally (коротко, про учёт), N12 Хрум (запоминается и звучит по-русски). <b>Экраны:</b> D1 как основа, D12 «Лента» для акцента на перекусах и D7 «Чат» как режим быстрого ввода.</p></div>
+  <div class="short"><div id="short">Избранное: пока ничего</div></div>
+</div>
+
+<script>
+(function(){
+'use strict';
+const $=s=>document.querySelector(s);
+const icon=(bg,fg,inner)=>`<div class="icon" style="background:${bg};color:${fg}"><svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${inner}</svg></div>`;
+const NAMES=[
+ ['Crumb','Крошка: единица учёта, которую другие теряют.','Считай даже крошки','#D97757','#141413','<defs><mask id="n1"><rect width="64" height="64" fill="#fff"/><circle cx="50" cy="14" r="13" fill="#000"/></mask></defs><circle cx="30" cy="35" r="23" fill="currentColor" stroke="none" mask="url(#n1)"/><circle cx="55" cy="33" r="2.4" fill="currentColor" stroke="none"/><circle cx="50" cy="47" r="1.8" fill="currentColor" stroke="none"/><circle cx="58" cy="22" r="1.5" fill="currentColor" stroke="none"/>'],
+ ['Morsel','Кусочек. Маленькая порция, которая и есть вся суть.','Каждый кусочек на счету','#141413','#D97757','<path d="M32 10a22 22 0 1 0 22 22H32z" fill="currentColor" stroke="none"/><path d="M38 8a18 18 0 0 1 18 18H38z"/>'],
+ ['Tally','Чёрточки на стене: самый древний способ вести счёт.','Просто веди счёт','#C15F3C','#FAF9F5','<path d="M16 14v36M26 14v36M36 14v36M46 14v36M10 44L52 22"/>'],
+ ['Pinch','Щепотка: именно такие мелочи незаметно решают итог.','Щепотка тоже считается','#FAF9F5','#D97757','<circle cx="22" cy="40" r="6" fill="currentColor" stroke="none"/><circle cx="42" cy="40" r="6" fill="currentColor" stroke="none"/><circle cx="32" cy="22" r="6" fill="currentColor" stroke="none"/><path d="M32 10v-2M14 24l-3-2M50 24l3-2" stroke-width="3.5"/>'],
+ ['Ember','Тлеющий уголёк: энергия, которая получается из еды.','Знай, чем топишь','#141413','#F2C9B5','<path d="M32 8c2 10 16 14 16 30a16 16 0 0 1-32 0c0-6 3-10 7-13 0 6 3 9 7 9 1-9-2-15 2-26z" fill="currentColor" stroke="none"/><path d="M32 52a7 7 0 0 1-7-7c0-4 4-6 5-10 4 3 9 6 9 10a7 7 0 0 1-7 7z" fill="#D97757" stroke="none"/>'],
+ ['Oat','Овёс: честный простой продукт, как и сам трекер.','Питание без шума','#F2C9B5','#141413','<path d="M32 56V20"/><path d="M32 22c-8-1-12-6-12-13 8 1 12 6 12 13zM32 22c8-1 12-6 12-13-8 1-12 6-12 13zM32 36c-8-1-12-6-12-13 8 1 12 6 12 13zM32 36c8-1 12-6 12-13-8 1-12 6-12 13zM32 50c-8-1-12-6-12-13 8 1 12 6 12 13zM32 50c8-1 12-6 12-13-8 1-12 6-12 13z" fill="currentColor" stroke-width="2.5"/>'],
+ ['Mise','От mise en place: всё разложено по местам перед началом.','Всё по местам','#D97757','#FAF9F5','<circle cx="32" cy="32" r="22"/><circle cx="32" cy="32" r="11"/><circle cx="32" cy="32" r="2.5" fill="currentColor" stroke="none"/>'],
+ ['Forkful','Полная вилка: одна порция за раз.','Порция за порцией','#141413','#FAF9F5','<path d="M18 10v14a6 6 0 0 0 6 6h0a6 6 0 0 0 6-6V10M24 10v20M24 30v26"/><path d="M44 10c-5 4-6 12-6 20h6v26"/>'],
+ ['Nosh','Перекус на разговорном: лёгкое, домашнее имя.','Перекусывай осознанно','#FAF9F5','#141413','<path d="M16 50V14l32 36V14" stroke-width="5.5"/><circle cx="50" cy="52" r="3.5" fill="#D97757" stroke="none"/>'],
+ ['Bitewise','Bite + wise: умный укус.','Умный укус','#C15F3C','#FAF9F5','<path d="M12 36a20 20 0 0 1 40 0"/><path d="M20 44l8 8 18-18" stroke-width="5.5"/>'],
+ ['Snapful','Snap + full: сфотографировал и всё записано.','Щёлк и готово','#F2C9B5','#141413','<rect x="9" y="17" width="46" height="34" rx="9"/><circle cx="32" cy="34" r="9"/><path d="M22 17l3-6h14l3 6"/><circle cx="46" cy="25" r="1.8" fill="currentColor" stroke="none"/>'],
+ ['Хрум','Звук хрустящего перекуса. Русское имя для русскоязычного рынка.','Хрумкнул — записал','#D97757','#141413','<circle cx="32" cy="34" r="12" fill="currentColor" stroke="none"/><path d="M32 8v8M12 16l6 6M52 16l-6 6M8 36h8M48 36h8M16 54l6-6M48 54l-6-6" stroke-width="4"/>']
+];
+const heart='<svg viewBox="0 0 24 24"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"/></svg>';
+let fav={};try{fav=JSON.parse(localStorage.getItem('crumb-board-fav')||'{}')}catch(e){}
+function saveFav(){try{localStorage.setItem('crumb-board-fav',JSON.stringify(fav))}catch(e){}}
+const REC_N=[1,3,12],REC_D=[1,7,12];
+$('#names-grid').innerHTML=NAMES.map((n,i)=>{const id='N'+(i+1);return`<article class="tile"><div class="top"><span class="num ${REC_N.includes(i+1)?'pick':''}">${id}${REC_N.includes(i+1)?' · рекомендую':''}</span><button class="fav ${fav[id]?'on':''}" data-id="${id}" aria-label="В избранное ${n[0]}" aria-pressed="${!!fav[id]}">${heart}</button></div>
+ <div class="lockup">${icon(n[3],n[4],n[5])}<span class="wm">${n[0]}</span></div>
+ <p class="mean">${n[1]}</p><p class="tag">«${n[2]}»</p></article>`}).join('');
+
+const sbar=c=>`<div class="sb" style="color:${c}"><span>9:41</span><i></i></div>`;
+const hbar=c=>`<div class="hb" style="color:${c}"></div>`;
+const tb=(extra)=>`<div class="tb"><span class="on">◍</span><span>▥</span><span class="ad">+</span><span>◔</span><span>◐</span></div>`;
+const ringSvg=(size,sw,col,bg,pct)=>{const r=(size-sw)/2,c=2*Math.PI*r;return`<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}"><circle cx="${size/2}" cy="${size/2}" r="${r}" fill="none" stroke="${bg}" stroke-width="${sw}"/><circle cx="${size/2}" cy="${size/2}" r="${r}" fill="none" stroke="${col}" stroke-width="${sw}" stroke-linecap="round" stroke-dasharray="${c}" stroke-dashoffset="${c*(1-pct)}" transform="rotate(-90 ${size/2} ${size/2})"/></svg>`};
+const WAVE='M0 9 q9 -9 18 0'+' t18 0'.repeat(9)+' V18 H0 Z';
+const rw=(a,b,c)=>`<div class="r"><div><b>${a}</b><small>${b}</small></div><b class="u">${c}</b></div>`;
+
+const D=[
+ ['Холст','Оранжевый фон, светлые карточки, плавающая панель. Это сборка из рабочего прототипа.',`<div class="ph d1">${sbar('#141413')}<div class="t"><small>Воскресенье, 25 октября</small><h3>Сегодня</h3></div><div class="cd"><div class="rg">${ringSvg(128,12,'#D97757','#F0EEE6',.22)}<div><small>осталось</small><b>1 320</b><small>из 1 700 ккал</small></div></div><div class="m"><div>Белки<i><u style="width:10%;background:#788C5D"></u></i></div><div>Жиры<i><u style="width:15%;background:#C46686"></u></i></div><div>Углеводы<i><u style="width:41%;background:#D9B99B"></u></i></div></div></div><div class="sn"><div><small style="color:#85837B">Лента дня</small><br><b>Перекусы: 2 · 300 ккал</b></div><span class="bt">+ Перекус</span></div>${tb()}${hbar('#141413')}</div>`],
+ ['Глина','Большое число на оранжевой шапке, под ней светлая «шторка» с дневником.',`<div class="ph d2">${sbar('#141413')}<div class="h"><small>Сегодня · 25 октября</small><span class="n">1 320</span><span class="k">ккал осталось из 1 700</span><div class="pl"><div><small>Белки</small><b>14 / 135</b></div><div><small>Жиры</small><b>9 / 60</b></div><div><small>Углеводы</small><b>64 / 155</b></div></div></div><div class="sh"><h4>Дневник</h4>${rw('Овсянка с бананом','08:15 · Завтрак','380')}${rw('Кофе с сиропом','10:40 · Перекус','120')}${rw('Горсть орехов','11:30 · Перекус','180')}</div>${hbar('#141413')}</div>`],
+ ['Ночь + апельсин','Тёмный фон для вечера и одна огромная оранжевая карточка. Включается вручную, не от системы.',`<div class="ph d3">${sbar('#FAF9F5')}<div class="t"><h3>Сегодня</h3><small style="color:#EBA58C;font-weight:700">29 дней</small></div><div class="big"><small style="font-weight:700;opacity:.75">ОСТАЛОСЬ</small><span class="n">1 320</span><small>из 1 700 ккал</small><div class="bar"><i></i></div></div><div class="g"><div><small>Перекусы</small><b class="u" style="font-size:17px">2 · 300</b></div><div><small>Вода</small><b class="u" style="font-size:17px">0,3 л</b></div></div>${tb()}${hbar('#FAF9F5')}</div>`],
+ ['Плитки','Разные по размеру плитки: главное число крупно, остальное компактно.',`<div class="ph d4">${sbar('#141413')}<div class="t"><h3>Сегодня</h3></div><div class="bn"><div class="a"><small>Осталось</small><span class="n">1 320</span><small>из 1 700 ккал</small></div><div class="b"><small>Вода</small><big>0,3 л</big></div><div class="c"><small>Белки</small><big>14 г</big></div><div class="d"><small>Перекусы</small><big>2 шт.</big></div><div class="e"><small>Серия</small><big>29 дн.</big></div></div>${tb()}${hbar('#141413')}</div>`],
+ ['Цифра','Только типографика: огромное число и список с точечными линиями. Читается за секунду.',`<div class="ph d5">${sbar('#141413')}<div class="t">Осталось сегодня</div><div class="n">1 320</div><div class="k">ккал из 1 700</div><div class="ls"><div><span>Белки</span><b>14 / 135 г</b></div><div><span>Жиры</span><b>9 / 60 г</b></div><div><span>Углеводы</span><b>64 / 155 г</b></div><div><span>Перекусы</span><b>2 · 300 ккал</b></div><div><span>Вода</span><b>0,3 / 2,65 л</b></div></div>${tb()}${hbar('#141413')}</div>`],
+ ['Тарелка','Макросы как круг тарелки: сразу видно, из чего состоит день.',`<div class="ph d6">${sbar('#141413')}<div class="t"><h3>Ваша тарелка</h3></div><div class="p"><div><b>1 320</b><small style="color:#85837B">осталось</small></div></div><div class="lg"><span><i class="dot" style="background:#788C5D"></i>Белки</span><span><i class="dot" style="background:#C46686"></i>Жиры</span><span><i class="dot" style="background:#D97757"></i>Углеводы</span></div><div class="cd"><span>Перекусы</span><b>2 · 300 ккал</b></div>${tb()}${hbar('#141413')}</div>`],
+ ['Чат','Запись как разговор: фото, ответ ИИ, уточнение одним касанием.',`<div class="ph d7">${sbar('#141413')}<div class="t"><h3>Сегодня</h3><span><b class="u" style="font-size:14px;color:#FAF9F5">1 320</b> ккал</span></div><div class="ms"><div class="us"><i></i><p>Обед</p></div><div class="ai"><div class="k">620 ккал</div><div style="margin-top:4px">Паста с курицей и сливочным соусом</div><div style="color:#85837B;margin-top:7px">Соус сливочный?</div><div class="ch"><span class="on">Да</span><span>Томатный</span></div></div><div class="us" style="width:auto"><p>кофе с двумя ложками сахара</p></div><div class="ai"><div class="k">65 ккал</div><div>Перекус записан</div></div></div><div class="cm"><span>Что вы съели?</span><b>↑</b></div>${hbar('#141413')}</div>`],
+ ['Чек','Дневник как кассовый чек: итого внизу. Ощущение «посчитал каждую мелочь».',`<div class="ph d8">${sbar('#141413')}<div class="rc"><h3>CRUMB</h3><div class="c">25.10 · чек дня</div><hr><div class="r"><span>Овсянка с бананом</span><b>380</b></div><div class="r sn"><span>Кофе с сиропом</span><b>120</b></div><div class="r sn"><span>Горсть орехов</span><b>180</b></div><hr><div class="r"><span>Белки</span><span>14 г</span></div><div class="r"><span>Жиры</span><span>9 г</span></div><div class="r"><span>Углеводы</span><span>64 г</span></div><div class="r"><span>Вода</span><span>0,3 л</span></div><hr><div class="r tt"><span>ИТОГО</span><span>680</span></div><div class="r"><span>ОСТАЛОСЬ</span><span>1 020</span></div><div class="c" style="margin-top:12px">*** спасибо, что записали ***</div></div>${hbar('#141413')}</div>`],
+ ['Вода','Нижняя часть экрана — стакан: уровень воды поднимается вместе с выпитым. Для тех, кто забывает пить.',`<div class="ph d9">${sbar('#141413')}<div class="lq"><svg viewBox="0 0 180 18" preserveAspectRatio="none"><path d="${WAVE}"/></svg></div><div class="t"><small>ОСТАЛОСЬ ККАЛ</small><span class="n">1 320</span><small>Б 14 · Ж 9 · У 64</small></div><div class="wb"><small style="font-weight:700">Вода</small><br><b class="n">1,6 из 2,65 л</b><div class="bt"><span>+150</span><span>+250</span><span>+500</span></div></div>${hbar('#141413')}</div>`],
+ ['Закат','Градиент от глубокого оранжевого к персиковому и стеклянная карточка. Тёплый, «приложение для себя».',`<div class="ph d10">${sbar('#FAF9F5')}<div class="t"><h3>Добрый день</h3><small style="opacity:.9">Сегодня вы в графике</small></div><div class="gl"><div>${ringSvg(112,10,'#C15F3C','rgba(20,20,19,.12)',.22)}</div><b class="n" style="margin-top:-76px;margin-bottom:30px;position:relative">1 320</b><div class="bar"><i></i></div><small style="color:#5E5D59">380 из 1 700 ккал</small></div><div class="r2"><div><small>Перекусы</small><br><b>2</b></div><div><small>Вода</small><br><b>0,3 л</b></div></div>${tb()}${hbar('#141413')}</div>`],
+ ['Коралл','Оранжевый с вишнёво-розовым акцентом: мягче и шире по аудитории.',`<div class="ph d11">${sbar('#141413')}<div class="t"><h3>Привет!</h3></div><div class="cd"><small style="font-weight:700;opacity:.8">ОСТАЛОСЬ</small><span class="n">1 320</span><div class="pl"><span>Б 14</span><span>Ж 9</span><span>У 64</span></div></div><div class="r2"><div style="background:#EBCECE"><small>Перекусы</small><br><b>2 · 300</b></div><div style="background:#FAF9F5"><small>Вода</small><br><b>0,3 л</b></div></div>${tb()}${hbar('#141413')}</div>`],
+ ['Лента','Дневник как таймлайн: еда крупными узлами, перекусы мелкими точками. Видно, как день «крошится».',`<div class="ph d12">${sbar('#141413')}<div class="t"><div><small style="font-size:10px;font-weight:700;opacity:.75">25 ОКТЯБРЯ</small><h3>Лента дня</h3></div><b class="k">1 320</b></div><div class="sg"><i style="width:22%;background:#141413"></i><i style="width:7%;background:#FAF9F5"></i><i style="width:11%;background:#FAF9F5"></i></div><div class="cd"><div class="tl"><div class="ev"><time>08:15</time><div><b>Овсянка с бананом</b><b>380</b></div></div><div class="ev s"><time>10:40</time><div><b>Кофе с сиропом</b><span>120</span></div></div><div class="ev s"><time>11:30</time><div><b>Горсть орехов</b><span>180</span></div></div><div class="ev"><time>13:05</time><div><b>Гречка с курицей</b><b>560</b></div></div><div class="ev s"><time>16:10</time><div><b>Яблоко</b><span>80</span></div></div></div></div>${tb()}${hbar('#141413')}</div>`]
+];
+$('#designs-grid').innerHTML=D.map((d,i)=>{const id='D'+(i+1);return`<article class="dcard">${d[2]}<div class="cap"><div class="row"><span class="num ${REC_D.includes(i+1)?'pick':''}">${id}${REC_D.includes(i+1)?' · рекомендую':''}</span><button class="fav ${fav[id]?'on':''}" data-id="${id}" aria-label="В избранное ${d[0]}" aria-pressed="${!!fav[id]}">${heart}</button></div><b>${d[0]}</b><p>${d[1]}</p></div></article>`}).join('');
+
+function paintShort(){const k=Object.keys(fav).filter(x=>fav[x]);$('#short').textContent=k.length?'Избранное: '+k.join(', '):'Избранное: пока ничего'}
+document.addEventListener('click',e=>{const b=e.target.closest('.fav');if(!b)return;const id=b.dataset.id;fav[id]=!fav[id];b.classList.toggle('on',fav[id]);b.setAttribute('aria-pressed',String(!!fav[id]));saveFav();paintShort()});
+paintShort();
+})();
+</script>
+
+</body>
+</html>

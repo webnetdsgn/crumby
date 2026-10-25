@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs><mask id="m"><rect width="1024" height="1024" fill="#fff"/><circle cx="800" cy="236" r="190" fill="#000"/></mask></defs>
+  <rect width="1024" height="1024" fill="#D97757"/>
+  <circle cx="480" cy="560" r="330" fill="#FAF9F5" mask="url(#m)"/>
+  <circle cx="360" cy="500" r="34" fill="#D97757" opacity=".8"/><circle cx="520" cy="650" r="34" fill="#D97757" opacity=".8"/><circle cx="600" cy="470" r="28" fill="#D97757" opacity=".8"/>
+  <circle cx="830" cy="520" r="34" fill="#FAF9F5"/><circle cx="772" cy="672" r="26" fill="#FAF9F5"/><circle cx="880" cy="400" r="20" fill="#FAF9F5"/>
+</svg>
