@@ -460,6 +460,30 @@ const nowT=()=>{const d=new Date();return pad(d.getHours())+':'+pad(d.getMinutes
   document.addEventListener('focusout',()=>setTimeout(()=>{window.scrollTo(0,0);fit()},80));
   fit();
 })();
+/* диагностика: открыть адрес с ?debug=1, чтобы увидеть реальные размеры экрана */
+if(/[?&]debug=1/.test(location.search)){
+  const probe=document.createElement('div');
+  probe.style.cssText='position:fixed;left:0;top:0;width:0;height:0;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);visibility:hidden;pointer-events:none';
+  document.body.appendChild(probe);
+  const box=document.createElement('pre');
+  box.style.cssText='position:fixed;left:6px;top:calc(env(safe-area-inset-top,0px) + 6px);z-index:9999;margin:0;padding:6px 8px;border-radius:8px;background:rgba(0,0,0,.8);color:#7CFF7C;font:10px/1.35 ui-monospace,Menlo,monospace;pointer-events:none;white-space:pre';
+  document.body.appendChild(box);
+  const upd=()=>{
+    const vv=window.visualViewport,cs=getComputedStyle(probe),tb=document.querySelector('.tabbar'),app=document.querySelector('.app');
+    const t=tb&&!tb.hidden?tb.getBoundingClientRect():null,a=app.getBoundingClientRect();
+    box.textContent=[
+      'inner '+innerWidth+'x'+innerHeight,
+      'visual '+(vv?Math.round(vv.width)+'x'+Math.round(vv.height)+' top '+Math.round(vv.offsetTop):'n/a'),
+      'screen '+screen.width+'x'+screen.height+' dpr '+devicePixelRatio,
+      'safe top '+cs.paddingTop+' bottom '+cs.paddingBottom,
+      'standalone '+(navigator.standalone===true||matchMedia('(display-mode: standalone)').matches),
+      'app top '+Math.round(a.top)+' h '+Math.round(a.height),
+      'tabbar '+(t?'bottom '+Math.round(t.bottom)+' gap '+Math.round(innerHeight-t.bottom)+' h '+Math.round(t.height):'hidden'),
+      '--vvh '+document.documentElement.style.getPropertyValue('--vvh')+' kb '+document.documentElement.classList.contains('kb')
+    ].join('\n');
+  };
+  upd();setInterval(upd,400);
+}
 const KEY='crumb-concept-v1';
 const defLang=()=>{try{return(navigator.language||'ru').toLowerCase().startsWith('ru')?'ru':'en'}catch(e){return'ru'}};
 const blank=()=>({v:2,lang:defLang(),onboarded:false,profile:null,plan:null,log:{},weights:[],theme:'orange',demo:false,chat:[],rem:{water:true,snack:true,weight:false},updatedAt:0});
