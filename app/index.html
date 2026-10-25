@@ -464,6 +464,7 @@ const nowT=()=>{const d=new Date();return pad(d.getHours())+':'+pad(d.getMinutes
   document.addEventListener('focusout',()=>setTimeout(()=>{window.scrollTo(0,0);fit()},80));
   fit();
 })();
+let AIDBG='';
 /* диагностика: открыть адрес с ?debug=1, чтобы увидеть реальные размеры экрана */
 if(/[?&]debug=1/.test(location.search)){
   const probe=document.createElement('div');
@@ -484,7 +485,8 @@ if(/[?&]debug=1/.test(location.search)){
       'app top '+Math.round(a.top)+' h '+Math.round(a.height),
       'tabbar '+(t?'bottom '+Math.round(t.bottom)+' gap '+Math.round(innerHeight-t.bottom)+' h '+Math.round(t.height):'hidden'),
       '--vvh '+document.documentElement.style.getPropertyValue('--vvh')+' fullh '+document.documentElement.style.getPropertyValue('--fullh'),
-      'kb '+document.documentElement.classList.contains('kb')
+      'kb '+document.documentElement.classList.contains('kb'),
+      (typeof AIDBG==='string'&&AIDBG)||'ai -'
     ].join('\n');
   };
   upd();setInterval(upd,400);
@@ -746,7 +748,8 @@ const aiErr=c=>({
   empty:L('Не вижу еды. Попробуйте другое фото или опишите словами.','I can’t see food. Try another photo or describe it in words.'),
   session_expired:L('Нужно заново войти в Claude.','Please sign in to Claude again.'),
   bad_pass:L('Неверный или не введён код доступа. Введите его в профиле.','Wrong or missing access code. Enter it in Profile.'),
-  no_key:L('На сервере не задан ключ Gemini.','The server has no Gemini key set.')
+  no_key:L('На сервере не задан ключ Gemini.','The server has no Gemini key set.'),
+  timeout:L('Gemini отвечает слишком долго. Попробуйте ещё раз.','Gemini is taking too long. Try again.')
 })[c];
 const foodRules=()=>`You are a nutritionist inside a calorie-tracking app. Estimate the meal and reply with ONLY JSON, no prose, no markdown:
 {"title":"short name","items":[{"name":"food or dish","grams":number,"kcal":number,"p":number,"f":number,"c":number,"sugar":number,"fiber":number}],"confidence":number from 0 to 1,"note":"one short sentence: what is not obvious or what you assumed","questions":[{"q":"short question","options":["answer","answer"]}]}
@@ -785,15 +788,59 @@ function parseJSON(t){
   if(m){try{return JSON.parse(m[0])}catch(e){}}
   throw{code:'invalid_json'};
 }
-async function gem({system,messages,image,json,signal}){
-  const body={system,messages,json:!!json};
+const errCode=(status,j)=>j&&j.error==='bad_pass'?'bad_pass':(status===429||(j&&j.error==='rate_limited'))?'rate_limited':j&&j.error==='no_key'?'no_key':(j&&j.error==='timeout')?'timeout':j&&j.error==='empty'?'refused':'upstream_error';
+async function gem({system,messages,image,json,signal,maxTokens,timeoutMs=45000}){
+  const t0=performance.now();
+  const ctl=new AbortController();let timedOut=false;
+  const tm=setTimeout(()=>{timedOut=true;ctl.abort()},timeoutMs);
+  if(signal)signal.addEventListener('abort',()=>ctl.abort());
+  const body={system,messages,json:!!json,maxTokens};
   if(image)body.image={mime:image.type||'image/jpeg',data:await blobToB64(image)};
-  let r;
-  try{r=await fetch('/api/gemini',{method:'POST',headers:{'content-type':'application/json','x-crumb-pass':getPass()},body:JSON.stringify(body),signal})}
-  catch(e){if(e&&e.name==='AbortError')throw{code:'cancelled'};throw{code:'upstream_error'}}
-  let j={};try{j=await r.json()}catch(e){}
-  if(!r.ok)throw{code:j.error==='bad_pass'?'bad_pass':r.status===429?'rate_limited':j.error==='no_key'?'no_key':j.error==='empty'?'refused':'upstream_error'};
+  let r,j={};
+  try{
+    r=await fetch('/api/gemini',{method:'POST',headers:{'content-type':'application/json','x-crumb-pass':getPass()},body:JSON.stringify(body),signal:ctl.signal});
+    try{j=await r.json()}catch(e){}
+  }catch(e){
+    if(timedOut)throw{code:'timeout'};
+    if(e&&e.name==='AbortError')throw{code:'cancelled'};
+    throw{code:'upstream_error'};
+  }finally{clearTimeout(tm)}
+  if(!r.ok)throw{code:errCode(r.status,j)};
+  AIDBG='ai '+Math.round(performance.now()-t0)+'ms'+(j.usage?' think '+(j.usage.thoughtsTokenCount||0)+' out '+(j.usage.candidatesTokenCount||0):'');
   return j.text;
+}
+// Ответ приходит кусками: текст появляется сразу, а не после полной генерации.
+async function gemStream({system,messages,maxTokens,onText,timeoutMs=60000}){
+  const t0=performance.now();let first=0,full='';
+  const ctl=new AbortController();let timedOut=false;
+  const tm=setTimeout(()=>{timedOut=true;ctl.abort()},timeoutMs);
+  try{
+    let r;
+    try{r=await fetch('/api/gemini',{method:'POST',headers:{'content-type':'application/json','x-crumb-pass':getPass()},body:JSON.stringify({system,messages,maxTokens,stream:true}),signal:ctl.signal})}
+    catch(e){throw{code:timedOut?'timeout':'upstream_error'}}
+    if(!r.ok){let j={};try{j=await r.json()}catch(e){}throw{code:errCode(r.status,j)}}
+    const reader=r.body.getReader(),dec=new TextDecoder();let buf='';
+    try{
+      for(;;){
+        const {done,value}=await reader.read();if(done)break;
+        buf+=dec.decode(value,{stream:true});
+        let i;
+        while((i=buf.indexOf('\n'))>=0){
+          const line=buf.slice(0,i).trim();buf=buf.slice(i+1);
+          if(!line.startsWith('data:'))continue;
+          const pl=line.slice(5).trim();if(!pl||pl==='[DONE]')continue;
+          try{
+            const d=JSON.parse(pl),parts=(d&&d.candidates&&d.candidates[0]&&d.candidates[0].content&&d.candidates[0].content.parts)||[];
+            const tx=parts.map(x=>x.text||'').join('');
+            if(tx){if(!first)first=Math.round(performance.now()-t0);full+=tx;if(onText)onText(full)}
+          }catch(e){}
+        }
+      }
+    }catch(e){throw{code:timedOut?'timeout':'upstream_error',text:full}}
+  }finally{clearTimeout(tm)}
+  AIDBG='ai first '+first+'ms total '+Math.round(performance.now()-t0)+'ms';
+  if(!full.trim())throw{code:'refused'};
+  return full;
 }
 const ctxLine=()=>{const p=S.profile;return p&&p.diet&&p.diet.length&&!p.diet.includes('none')?`\nUser dietary restrictions: ${labs('diet',p.diet)}.`:''};
 async function askFood(kind){
@@ -804,8 +851,8 @@ async function askFood(kind){
       const ctl=sh.ctl=new AbortController();
       if(kind==='photo'){
         const blob=await prepImage(sh.file);
-        raw=parseJSON(await gem({system:foodRules()+ctxLine(),messages:[{role:'user',text:'The photo shows a meal. Identify the dishes and estimate portions from the size of the plate and cutlery.'}],image:blob,json:true,signal:ctl.signal}));
-      }else raw=parseJSON(await gem({system:foodRules()+ctxLine(),messages:[{role:'user',text:'Description: "'+sh.text.trim()+'"'}],json:true,signal:ctl.signal}));
+        raw=parseJSON(await gem({system:foodRules()+ctxLine(),messages:[{role:'user',text:'The photo shows a meal. Identify the dishes and estimate portions from the size of the plate and cutlery.'}],image:blob,json:true,maxTokens:1500,signal:ctl.signal}));
+      }else raw=parseJSON(await gem({system:foodRules()+ctxLine(),messages:[{role:'user',text:'Description: "'+sh.text.trim()+'"'}],json:true,maxTokens:1500,signal:ctl.signal}));
     }
     else if(!SAMPLE){await sleep(1700);raw=mockFood(sh.text);sh.demo=true}
     else{
@@ -831,7 +878,7 @@ async function askFix(text){
     let raw;
     if(!SAMPLE&&BACKEND){
       const cur={title:sh.draft.title,items:sh.draft.items.map(i=>({name:i.name,grams:Math.round(i.grams*i.s),kcal:Math.round(i.kcal*i.s),p:i.p*i.s,f:i.f*i.s,c:i.c*i.s,sugar:i.sugar*i.s,fiber:i.fiber*i.s}))};
-      raw=parseJSON(await gem({system:foodRules()+ctxLine(),messages:[{role:'user',text:'Previous estimate (JSON):\n'+JSON.stringify(cur)+'\nThe user corrects it: "'+text.trim()+'"\nUpdate the estimate with the correction and return JSON in the same format. If the correction answers a question, drop that question.'}],json:true}));
+      raw=parseJSON(await gem({system:foodRules()+ctxLine(),messages:[{role:'user',text:'Previous estimate (JSON):\n'+JSON.stringify(cur)+'\nThe user corrects it: "'+text.trim()+'"\nUpdate the estimate with the correction and return JSON in the same format. If the correction answers a question, drop that question.'}],json:true,maxTokens:1500}));
     }
     else if(!SAMPLE){await sleep(1200);raw=mockFood(text);sh.demo=true}
     else{
@@ -1159,7 +1206,7 @@ async function sendCoach(text){
     if(!SAMPLE&&BACKEND){
       const msgs=[];S.chat.slice(-9).forEach(m=>{const role=m.r==='u'?'user':'model';if(msgs.length&&msgs[msgs.length-1].role===role)msgs[msgs.length-1].text+='\n'+m.c;else msgs.push({role,text:m.c})});
       while(msgs.length&&msgs[0].role!=='user')msgs.shift();
-      ans=await gem({system:coachCtx(),messages:msgs});
+      ans=await gemStream({system:coachCtx(),messages:msgs,maxTokens:1024,onText:t=>{b.innerHTML=fmtMsg(t);box.scrollTop=box.scrollHeight}});
       b.innerHTML=fmtMsg(ans);
     }else if(!SAMPLE){
       await sleep(900);const tip=tipFor(todayKey()),left=S.plan.kcal-totals(todayKey()).kcal;
