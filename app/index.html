@@ -761,6 +761,7 @@ const aiErr=c=>({
   images_unavailable:L('Фото сейчас недоступно. Опишите еду словами.','Photos aren’t available right now. Describe the food in words.'),
   invalid_json:L('ИИ ответил не в том формате. Попробуйте ещё раз.','The AI replied in the wrong format. Try again.'),
   upstream_error:L('Сбой связи. Попробуйте ещё раз.','Connection problem. Try again.'),
+  busy:L('Gemini сейчас перегружен. Повторите через минуту.','Gemini is overloaded right now. Try again in a minute.'),
   refused:L('ИИ не смог это оценить. Уточните описание.','The AI couldn’t estimate this. Clarify the description.'),
   empty:L('Не вижу еды. Попробуйте другое фото или опишите словами.','I can’t see food. Try another photo or describe it in words.'),
   session_expired:L('Нужно заново войти в Claude.','Please sign in to Claude again.'),
@@ -824,7 +825,7 @@ function parseJSON(t){
   throw{code:'invalid_json'};
 }
 const errDetail=(status,j)=>[j&&j.status?'Gemini '+j.status:(status?'HTTP '+status:''),j&&j.finish?'finish '+j.finish:'',j&&j.detail?String(j.detail).slice(0,160):''].filter(Boolean).join(' · ');
-const errCode=(status,j)=>j&&(j.error==='limit_day'||j.error==='limit_ip')?'limit_day':j&&j.error==='limit_global'?'limit_global':j&&j.error==='too_large'?'too_large':j&&j.error==='bad_pass'?'bad_pass':(status===429||(j&&j.error==='rate_limited'))?'rate_limited':j&&j.error==='no_key'?'no_key':(j&&j.error==='timeout')?'timeout':j&&j.error==='empty'?'refused':'upstream_error';
+const errCode=(status,j)=>j&&(j.error==='limit_day'||j.error==='limit_ip')?'limit_day':j&&j.error==='limit_global'?'limit_global':j&&j.error==='too_large'?'too_large':j&&j.error==='bad_pass'?'bad_pass':(status===429||(j&&j.error==='rate_limited'))?'rate_limited':j&&j.error==='no_key'?'no_key':(j&&j.error==='upstream'&&(j.status===503||j.status===500))?'busy':(j&&j.error==='timeout')?'timeout':j&&j.error==='empty'?'refused':'upstream_error';
 async function imgPayload(file){const blob=await prepImage(file);return{mime:blob.type||'image/jpeg',data:await blobToB64(blob)}}
 async function aiCall(body,{signal,timeoutMs=45000}={}){
   const t0=performance.now();
@@ -1384,7 +1385,7 @@ function remindersBlock(sw){
   if(!PUSH.sub)return `<button class="btn" style="margin-top:12px" data-act="pushOn" ${PUSH.busy?'disabled':''}>${L('Включить уведомления','Turn on notifications')}</button>${PUSH.err?`<div class="err" style="margin-top:10px">${esc(PUSH.err)}</div>`:''}${note(L('Напомним про воду, вечерние перекусы и взвешивание по времени вашего часового пояса.','We’ll remind you about water, evening snacks and weigh-ins on your own time zone.'))}`;
   return sws+`<div class="row" style="margin-top:12px;flex-wrap:wrap"><button class="mini" data-act="pushTest">${L('Отправить тест','Send a test')}</button><button class="mini danger" data-act="pushOff">${L('Выключить','Turn off')}</button></div>`;
 }
-const BUILD='2026-10-26.4';
+const BUILD='2026-10-26.5';
 function vProfile(ani){
   const p=S.profile,P=S.plan,u=U();
   const kv=(a,b)=>`<div class="kv"><span>${a}</span><b>${b}</b></div>`;

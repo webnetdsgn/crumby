@@ -15,8 +15,10 @@
 //   OWNER_DAILY_LIMIT   лимит владельца (по умолчанию 500)
 //   GEMINI_MODEL        модель (по умолчанию gemini-3.1-flash-lite)
 //   GEMINI_THINKING     "default": не ограничивать «размышления» модели
+//   GEMINI_FALLBACK_MODEL  запасная модель, если основная перегружена (503) или упёрлась в лимит (по умолчанию gemini-3.5-flash-lite, "off" выключает)
 
 export const MODEL_DEFAULT = 'gemini-3.1-flash-lite';
+export const FALLBACK_DEFAULT = 'gemini-3.5-flash-lite'; // запасная модель на случай «перегружено» (503) и лимита основной
 const MAX_BODY = 6_000_000;
 const MAX_IMAGE_CHARS = 4_500_000;
 const UPSTREAM_TIMEOUT_MS = 28_000;
@@ -100,9 +102,9 @@ const ipOf = async (req) => {
   return ip ? (await sha256hex('ip:' + ip)).slice(0, 16) : '';
 };
 
-// Проверка суточных лимитов. Возвращает ответ с ошибкой или null, если можно продолжать.
+// Проверка суточных лимитов. Возвращает { denied } (ответ с ошибкой) или { ticket }, по которому единицу лимита можно вернуть, если Gemini не ответил.
 async function quota(env, req, who) {
-  if (!env.HUB) return null;
+  if (!env.HUB) return {};
   const open = who.tier === 'open';
   const limits = {
     uid: who.tier === 'owner' ? num(env.OWNER_DAILY_LIMIT, 500) : open ? num(env.OPEN_DAILY_LIMIT, 20) : num(env.AI_DAILY_LIMIT, 80),
@@ -110,11 +112,15 @@ async function quota(env, req, who) {
     global: open ? num(env.AI_GLOBAL_LIMIT, 800) : 0,
   };
   try {
-    const r = await hub(env, 'use', { uid: who.uid, ip: open ? await ipOf(req) : '', limits }, 2500);
-    if (!r.ok) return json({ error: r.reason, limit: r.limit }, 429);
-  } catch { /* хранилище недоступно или отвечает слишком долго: не блокируем ИИ */ }
-  return null;
+    const ip = open ? await ipOf(req) : '';
+    const r = await hub(env, 'use', { uid: who.uid, ip, limits }, 2500);
+    if (!r.ok) return { denied: json({ error: r.reason, limit: r.limit }, 429) };
+    return { ticket: { uid: who.uid, ip } };
+  } catch { return {}; /* хранилище недоступно или отвечает слишком долго: не блокируем ИИ */ }
 }
+
+// Если Gemini не ответил по своей вине (перегрузка, лимит, таймаут), запрос не должен съедать суточный лимит человека.
+const refunder = (env, ticket) => ticket ? async () => { try { await hub(env, 'refund', ticket, 2500); } catch { /* не страшно */ } } : null;
 
 /* ---------------- маршрутизация ---------------- */
 
@@ -271,16 +277,16 @@ async function aiTask(req, env, who) {
   const spec = specFor(b || {});
   if (!spec) return json({ error: 'bad_request' }, 400);
   const tq = Date.now();
-  const denied = await quota(env, req, who);
+  const { denied, ticket } = await quota(env, req, who);
   if (denied) return denied;
-  return callModel(env, spec, Date.now() - tq);
+  return callModel(env, spec, Date.now() - tq, refunder(env, ticket));
 }
 
 async function rawGemini(req, env, who) {
   if (Number(req.headers.get('content-length') || 0) > MAX_BODY) return json({ error: 'too_large' }, 413);
   let b;
   try { b = await req.json(); } catch { return json({ error: 'bad_json' }, 400); }
-  const denied = await quota(env, req, who);
+  const { denied, ticket } = await quota(env, req, who);
   if (denied) return denied;
   return callModel(env, {
     system: b.system ? String(b.system).slice(0, 12000) : '',
@@ -289,7 +295,7 @@ async function rawGemini(req, env, who) {
     json: !!b.json,
     maxTokens: Number(b.maxTokens) || 2048,
     stream: b.stream === true,
-  });
+  }, 0, refunder(env, ticket));
 }
 
 /* ---------------- Gemini ---------------- */
@@ -315,7 +321,7 @@ async function callGemini(env, model, body, stream, limitThinking) {
   }
 }
 
-async function callModel(env, spec, quotaMs = 0) {
+async function callModel(env, spec, quotaMs = 0, refund = null) {
   const contents = (spec.messages || [])
     .map((m) => ({ role: m.role === 'model' ? 'model' : 'user', parts: [{ text: String(m.text || '') }] }))
     .filter((c) => c.parts[0].text);
@@ -333,31 +339,47 @@ async function callModel(env, spec, quotaMs = 0) {
   if (spec.json) body.generationConfig.responseMimeType = 'application/json';
 
   const model = env.GEMINI_MODEL || MODEL_DEFAULT;
+  let alt = String(env.GEMINI_FALLBACK_MODEL == null ? FALLBACK_DEFAULT : env.GEMINI_FALLBACK_MODEL).trim();
+  if (alt.toLowerCase() === 'off') alt = '';
+  if (alt === model) alt = model === MODEL_DEFAULT ? '' : MODEL_DEFAULT;
   const stream = spec.stream === true;
-  let limit = env.GEMINI_THINKING !== 'default';
   const t0 = Date.now();
 
-  const attempt = async (lim) => {
-    try {
-      return { r: await callGemini(env, model, body, stream, lim) };
-    } catch (e) {
-      return { err: e && e.name === 'AbortError' ? 'timeout' : 'upstream' };
-    }
+  const drop = (res) => { try { if (res.r && res.r.body) res.r.body.cancel(); } catch { /* ignore */ } };
+  // одна модель: при необходимости без «размышлений», с повтором после лимита и после ошибки сервера Google
+  const tryModel = async (m) => {
+    let lim = env.GEMINI_THINKING !== 'default';
+    const go = async (l) => {
+      try {
+        return { r: await callGemini(env, m, body, stream, l) };
+      } catch (e) {
+        return { err: e && e.name === 'AbortError' ? 'timeout' : 'upstream' };
+      }
+    };
+    let res = await go(lim);
+    // модель не принимает ограничение «размышлений»: повторяем без него
+    if (res.r && res.r.status === 400 && lim) { lim = false; drop(res); res = await go(false); }
+    // общий лимит Gemini на минуту: один раз повторяем через секунду, чтобы короткий всплеск не ронял запросы
+    if (res.r && res.r.status === 429) { drop(res); await sleep(1000 + Math.random() * 800); res = await go(lim); }
+    // 500/503 «модель перегружена»: короткая пауза и ещё одна попытка
+    if (res.r && res.r.status >= 500) { drop(res); await sleep(600 + Math.random() * 600); res = await go(lim); }
+    return res;
   };
 
-  let res = await attempt(limit);
-  // модель не принимает ограничение «размышлений»: повторяем без него
-  if (res.r && res.r.status === 400 && limit) { limit = false; res = await attempt(false); }
-  // общий лимит Gemini на минуту: один раз повторяем через секунду, чтобы короткий всплеск не ронял запросы
-  if (res.r && res.r.status === 429) { await sleep(1000 + Math.random() * 800); res = await attempt(limit); }
+  let used = model;
+  let res = await tryModel(model);
+  // основная модель недоступна или упёрлась в свой лимит: пробуем запасную (у каждой модели свой лимит и своя нагрузка)
+  const unavailable = (x) => x.err === 'upstream' || (x.r && (x.r.status >= 500 || x.r.status === 429 || x.r.status === 404));
+  if (alt && unavailable(res)) { drop(res); used = alt; res = await tryModel(alt); }
 
-  if (res.err) return json({ error: res.err }, res.err === 'timeout' ? 504 : 502);
+  const fail = async (resp) => { if (refund) await refund(); return resp; };
+  if (res.err) return fail(json({ error: res.err }, res.err === 'timeout' ? 504 : 502));
   const r = res.r;
-  if (r.status === 429) return json({ error: 'rate_limited' }, 429);
+  if (r.status === 429) return fail(json({ error: 'rate_limited' }, 429));
   if (!r.ok) {
     let detail = '';
     try { detail = (await r.text()).replace(/\s+/g, ' ').slice(0, 300); } catch { /* ignore */ }
-    return json({ error: 'upstream', status: r.status, detail }, 502);
+    return fail(json({ error: 'upstream', status: r.status, detail }, 502));
   }
 
   // сколько ушло на проверку лимита (q) и на ожидание ответа Gemini (up), в миллисекундах: видно в самопроверке приложения
@@ -376,7 +398,7 @@ async function callModel(env, spec, quotaMs = 0) {
   if (!text) {
     return json({ error: 'empty', blocked: (d && d.promptFeedback && d.promptFeedback.blockReason) || null, finish: (d && d.candidates && d.candidates[0] && d.candidates[0].finishReason) || null }, 502);
   }
-  const out = json({ text, model, ms: Date.now() - t0, usage: (d && d.usageMetadata) || null });
+  const out = json({ text, model: used, ms: Date.now() - t0, usage: (d && d.usageMetadata) || null });
   out.headers.set('x-crumb-ms', timing);
   return out;
 }
@@ -497,6 +519,17 @@ export class HubCore {
     if (ki) await this.store.put(ki, String(ni + 1));
     await this.store.put(kg, String(ng + 1));
     return { ok: true, n: nu + 1 };
+  }
+
+  // Возврат единицы лимита, если Gemini не ответил: уменьшаем те же счётчики, что и в op_use.
+  async op_refund({ uid, ip }) {
+    const day = this.day();
+    for (const k of [`u:${uid}:${day}`, ip ? `i:${ip}:${day}` : null, `g:${day}`]) {
+      if (!k) continue;
+      const n = Number((await this.store.get(k)) || 0);
+      if (n > 0) await this.store.put(k, String(n - 1));
+    }
+    return { ok: true };
   }
 
   async op_hit({ key, limit }) {
