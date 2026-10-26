@@ -28,6 +28,7 @@ import urllib.request
 CTX = ssl.create_default_context()
 LOCK = threading.Lock()
 STATS = {}          # название запроса -> список (код, миллисекунды)
+WHY = {}            # (запрос, код, причина) -> сколько раз
 T_START = time.perf_counter()
 
 
@@ -54,8 +55,13 @@ def req(base, method, path, body=None, headers=None, timeout=40):
 
 
 def rec(name, res):
+    why = ''
+    if res[0] == 0 or res[0] >= 400:
+        why = str(jbody(res[2]).get('error') or ('нет связи' if res[0] == 0 else ''))
     with LOCK:
         STATS.setdefault(name, []).append((res[0], res[1]))
+        if why:
+            WHY[(name, res[0], why)] = WHY.get((name, res[0], why), 0) + 1
     return res
 
 
@@ -88,6 +94,13 @@ def guest(base, i, a):
         for _ in range(a.ai):
             rec('/api/ai (ping)', req(base, 'POST', '/api/ai', {'task': 'ping'}, hdr))
         time.sleep(random.uniform(0.2, 1.0))         # человек не жмёт без пауз
+
+
+def ai_burst(base, barrier, text):
+    """Один ИИ-запрос в общий старт: все потоки отправляют его в одну и ту же долю секунды."""
+    hdr = {'x-crumb-id': rid()}                     # у каждого «человека» своё устройство, как в жизни
+    barrier.wait()
+    rec('ИИ (еда) одновременно', req(base, 'POST', '/api/ai', {'task': 'food', 'lang': 'ru', 'text': text}, hdr, timeout=70))
 
 
 def state_blob():
@@ -141,6 +154,12 @@ def report(started):
         for s, m in rows:
             codes[s] = codes.get(s, 0) + 1
     print('Коды ответов:', ', '.join('%s×%d' % (k if k else 'нет связи', v) for k, v in sorted(codes.items())))
+    if WHY:
+        print('Причины отказов:')
+        for (name, code, why), n in sorted(WHY.items(), key=lambda kv: -kv[1]):
+            print('  %-24s код %s «%s» ×%d' % (name, code or '—', why, n))
+        print('  (rate_limited: общий лимит запросов Gemini; limit_ip / limit_day / limit_global: лимиты самого приложения;')
+        print('   upstream / timeout / empty: Gemini не ответил вовремя или отказал)')
     print('Вывод:', 'есть ошибки или медленные ответы (p95 больше 2,5 с), смотрите таблицу' if bad_any else 'ошибок нет, ответы быстрые')
 
 
@@ -151,6 +170,7 @@ def main():
     ap.add_argument('--rounds', type=int, default=5, help='сколько кругов на каждого (по умолчанию 5)')
     ap.add_argument('--ramp', type=float, default=0, help='за сколько секунд плавно подключить всех (0 = одновременно)')
     ap.add_argument('--ai', type=int, default=0, help='ИИ-запросов (ping) на пользователя за круг, от 0 до 3')
+    ap.add_argument('--ai-burst', type=int, default=0, help='сколько ИИ-запросов отправить в один момент посреди нагрузки (от 0 до 20)')
     ap.add_argument('--accounts', type=int, default=0, help='тестовых аккаунтов для проверки синхронизации, от 0 до 5')
     ap.add_argument('--logins', type=int, default=0, help='сколько входов одновременно (нужны --accounts)')
     ap.add_argument('--yes', action='store_true', help='подтвердить больше 100 пользователей')
@@ -160,15 +180,16 @@ def main():
     if not base.startswith(('http://', 'https://')):
         sys.exit('Адрес должен начинаться с https://')
     a.ai = max(0, min(3, a.ai))
+    a.ai_burst = max(0, min(20, a.ai_burst))
     a.accounts = max(0, min(5, a.accounts))
     if a.users > 100 and not a.yes:
         sys.exit('Больше 100 пользователей: добавьте --yes, если уверены.')
-    if a.users * a.rounds * a.ai > 60:
+    if a.users * a.rounds * a.ai + a.ai_burst > 60:
         print('Внимание: ИИ-запросов будет больше 60, лимит вашего IP (60 в сутки) их отрежет, это нормально.')
     if a.logins and not a.accounts:
         sys.exit('--logins работает только вместе с --accounts.')
 
-    print('Проверяю %s: %d пользователей × %d кругов, ИИ %d, аккаунтов %d, одновременных входов %d' % (base, a.users, a.rounds, a.ai, a.accounts, a.logins))
+    print('Проверяю %s: %d пользователей × %d кругов, ИИ %d, ИИ одновременно %d, аккаунтов %d, одновременных входов %d' % (base, a.users, a.rounds, a.ai, a.ai_burst, a.accounts, a.logins))
     st, ms, raw = req(base, 'GET', '/api/health')
     h = jbody(raw)
     if st != 200:
@@ -191,6 +212,9 @@ def main():
     t0 = time.perf_counter()
     jobs = [(lambda i=i: guest(base, i, a)) for i in range(a.users)]
     jobs += [(lambda c=c: acct_agent(base, c, a.rounds)) for c in creds]
+    if a.ai_burst:
+        barrier = threading.Barrier(a.ai_burst)
+        jobs += [(lambda: (time.sleep(0.8), ai_burst(base, barrier, 'яблоко и чашка чая без сахара'))) for _ in range(a.ai_burst)]
     run_threads(jobs)
     if creds and a.logins:
         run_threads([(lambda c=creds[k % len(creds)]: login_burst(base, c)) for k in range(a.logins)])
