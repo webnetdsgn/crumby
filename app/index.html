@@ -60,8 +60,8 @@ html.kb .screen.coachscreen .chiprow{display:none}
 .screen{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;
   padding-block:6px 24px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
 .screen.coachscreen{display:flex;flex-direction:column;overflow:hidden;padding-bottom:28px}
-.view{animation:viewIn .55s var(--ease) both}
-@keyframes viewIn{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+.view{animation:viewIn .4s var(--ease) both}
+@keyframes viewIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 @keyframes rise{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
 .stag>*{animation:rise .6s var(--ease) both;animation-delay:calc(var(--i,0)*55ms)}
 .stack{display:flex;flex-direction:column;gap:12px}
@@ -187,13 +187,14 @@ input[type=range]:active::-webkit-slider-thumb{transform:scale(1.18)}
 .top{display:flex;align-items:flex-end;justify-content:space-between;padding:14px 0 12px}
 .top .eyebrow{display:block;margin-bottom:8px}
 .pill{display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 14px;border-radius:17px;background:var(--pri);color:var(--pri-t);font:700 13px var(--sans)}
-.days{display:flex;gap:4px;margin:2px 0 14px}
-.day{flex:1;border:0;background:transparent;border-radius:20px;padding:9px 0 8px;display:flex;flex-direction:column;align-items:center;gap:2px;color:var(--t2);transition:all .3s var(--ease)}
+.days{position:relative;display:flex;gap:4px;margin:2px 0 14px}
+.dpill{position:absolute;top:0;bottom:0;left:0;width:0;border-radius:20px;background:var(--ivory);box-shadow:0 8px 18px rgba(120,45,20,.25);transition:transform .5s var(--spring),width .5s var(--spring);pointer-events:none}
+.day{position:relative;z-index:1;flex:1;border:0;background:transparent;border-radius:20px;padding:9px 0 8px;display:flex;flex-direction:column;align-items:center;gap:2px;color:var(--t2);transition:all .3s var(--ease)}
 .day small{font-size:11.5px;font-weight:600}
 .day b{font:600 15px var(--disp);color:var(--t1);letter-spacing:-.02em}
 .day i{width:5px;height:5px;border-radius:50%;background:transparent;margin-top:3px;transition:background .3s}
 .day.has i{background:var(--t1)}
-.day.on{background:var(--ivory);color:var(--slate);box-shadow:0 8px 18px rgba(120,45,20,.25)}
+.day.on{color:var(--slate)}
 .day.on b,.day.on small{color:var(--slate)}
 .day.on.has i{background:var(--or)}
 .day:active{transform:scale(.94)}
@@ -224,9 +225,6 @@ input[type=range]:active::-webkit-slider-thumb{transform:scale(1.18)}
 /* water */
 .water{display:flex;gap:16px;align-items:center}
 .bottle{position:relative;width:64px;height:114px;border-radius:22px 22px 26px 26px;border:2.5px solid var(--hair);overflow:hidden;flex:none;background:var(--surf)}
-.liquid{position:absolute;left:0;right:0;bottom:0;height:0;background:var(--sky);transition:height 1.2s var(--ease)}
-.wave{position:absolute;left:0;top:-11px;width:240px;height:24px;fill:var(--sky);animation:waveX 3.4s linear infinite}
-@keyframes waveX{to{transform:translateX(-60px)}}
 .wbody{flex:1;min-width:0;display:flex;flex-direction:column;gap:10px}
 .wbody .eyebrow{display:block}
 .wnum{font:600 26px/1 var(--disp);letter-spacing:-.03em}
@@ -239,6 +237,12 @@ input[type=range]:active::-webkit-slider-thumb{transform:scale(1.18)}
 .sec-h{display:flex;align-items:baseline;justify-content:space-between;margin:22px 2px 12px}
 .entry{background:var(--card);border-radius:22px;overflow:hidden;box-shadow:var(--shadow)}
 .entry+.entry{margin-top:8px}
+.entry.enter{animation:entryIn .65s var(--spring) both;animation-delay:var(--ed,0s)}
+@keyframes entryIn{0%{opacity:0;transform:translateY(-12px) scale(.96)}55%{opacity:1}100%{opacity:1;transform:none}}
+.entry.leaving{opacity:0;transform:translateX(-30px) scale(.96);transition:height .36s var(--ease),opacity .24s var(--ease),transform .36s var(--ease);pointer-events:none}
+.tip.swap{animation:rise .45s var(--ease) both}
+.sheet-body.swap,.sheet-foot.swap{animation:swapIn .38s var(--ease) both}
+@keyframes swapIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
 .erow{display:flex;align-items:center;gap:12px;width:100%;padding:12px 14px;border:0;background:transparent;text-align:left;color:inherit}
 .eicon{width:40px;height:40px;border-radius:14px;background:var(--card2);color:var(--t2);display:grid;place-items:center;flex:none}
 .is-snack .eicon{background:var(--or);color:var(--slate)}
@@ -310,11 +314,12 @@ input[type=range]:active::-webkit-slider-thumb{transform:scale(1.18)}
 /* floating tab bar */
 .tabbar[hidden]{display:none}
 .tabbar{display:flex;align-items:center;justify-content:space-around;margin:0 max(14px,env(safe-area-inset-right,0px)) calc(6px + env(safe-area-inset-bottom,0px) * .6) max(14px,env(safe-area-inset-left,0px));padding:7px 6px;border-radius:32px;background:var(--card);box-shadow:0 16px 36px rgba(90,30,10,.35);position:relative;z-index:5}
-.tab{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;background:none;border:0;padding:7px 0 6px;border-radius:22px;font:600 10.5px var(--sans);color:var(--t3);transition:color .25s,background .25s}
+.tabpill{position:absolute;top:7px;bottom:7px;left:0;width:0;border-radius:22px;background:var(--card2);transition:transform .5s var(--spring),width .5s var(--spring);pointer-events:none}
+.tab{position:relative;z-index:1;flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;background:none;border:0;padding:7px 0 6px;border-radius:22px;font:600 10.5px var(--sans);color:var(--t3);transition:color .25s}
 .tab .ico{transition:transform .4s var(--spring)}
-.tab.on{color:var(--t1);background:var(--card2)}
+.tab.on{color:var(--t1)}
 .tab.on .ico{transform:translateY(-1px) scale(1.1)}
-.fab{width:56px;height:56px;border-radius:50%;border:0;margin:-30px 6px 0;background:var(--pri);color:var(--pri-t);display:grid;place-items:center;box-shadow:0 0 0 6px var(--canvas),0 12px 22px rgba(20,20,19,.3);transition:transform .35s var(--spring);flex:none}
+.fab{position:relative;z-index:1;width:56px;height:56px;border-radius:50%;border:0;margin:-30px 6px 0;background:var(--pri);color:var(--pri-t);display:grid;place-items:center;box-shadow:0 0 0 6px var(--canvas),0 12px 22px rgba(20,20,19,.3);transition:transform .35s var(--spring);flex:none}
 .fab:active{transform:scale(.9) rotate(90deg)}
 
 /* sheet */
@@ -376,8 +381,6 @@ textarea.txt:focus{box-shadow:inset 0 0 0 2.5px var(--slate)}
 
 .toast{position:absolute;left:50%;bottom:calc(98px + env(safe-area-inset-bottom,0px));transform:translate(-50%,20px);background:var(--slate);color:var(--ivory);padding:12px 18px;border-radius:20px;font:600 14px var(--sans);opacity:0;pointer-events:none;transition:all .45s var(--spring);z-index:60;white-space:nowrap;max-width:92%;overflow:hidden;text-overflow:ellipsis}
 .toast.on{opacity:1;transform:translate(-50%,0)}
-.pulse{animation:pulse .7s var(--ease)}
-@keyframes pulse{0%{transform:scale(1)}35%{transform:scale(1.035)}100%{transform:scale(1)}}
 
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.001s!important;animation-iteration-count:1!important;transition-duration:.001s!important}}
 
@@ -398,8 +401,16 @@ textarea.txt:focus{box-shadow:inset 0 0 0 2.5px var(--slate)}
 .bt.a .bar{background:rgba(250,249,245,.18);height:9px}
 .bt.a .bar>i{background:var(--or)}
 .bt.w{grid-column:span 2;background:var(--sky);color:var(--slate)}
-.bt.w .liquid{background:rgba(250,249,245,.34);z-index:0}
-.bt.w .wave{fill:rgba(250,249,245,.34)}
+.bt.w .liquid{position:absolute;inset:0;z-index:0;transform:translateY(var(--y,100%));transition:transform 1.1s var(--ease);will-change:transform}
+.bt.w .liquid::before{content:"";position:absolute;left:0;right:0;top:0;bottom:-2px;background:#9BBBD9}
+.bt.w .waves{position:absolute;left:0;bottom:100%;width:100%;height:16px;transform-origin:50% 100%;transition:opacity .4s}
+.bt.w .waves.off{opacity:0}
+.bt.w .waves.splash{animation:splash 1.1s var(--ease)}
+.bt.w .wave{position:absolute;left:0;bottom:-1px;width:200%;height:16px;fill:#9BBBD9;animation:waveX 7s linear infinite}
+.bt.w .wave.b{height:13px;fill:#86ADD3;animation-duration:11s;animation-direction:reverse}
+@keyframes waveX{to{transform:translateX(-50%)}}
+@keyframes splash{0%{transform:scaleY(1)}22%{transform:scaleY(2.3)}100%{transform:scaleY(1)}}
+.bt .v span.wn{font:inherit;opacity:1;margin:0;letter-spacing:inherit}
 .bt.w .wtop,.bt.w .wbtns{position:relative;z-index:1}
 .bt.w .wtop{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
 .bt.w .mini{background:rgba(250,249,245,.62);color:var(--slate)}
@@ -667,7 +678,7 @@ function totals(k){
   return t;
 }
 function dayObj(k){return S.log[k]||(S.log[k]={entries:[],water:0})}
-function addEntry(k,e){const d=dayObj(k);d.entries.push(Object.assign({id:uid()},e));d.entries.sort((a,b)=>a.t.localeCompare(b.t));save()}
+function addEntry(k,e){const d=dayObj(k),id=uid();d.entries.push(Object.assign({},e,{id}));d.entries.sort((a,b)=>a.t.localeCompare(b.t));save();return id}
 function streak(){
   let n=0,d=new Date();const ok=k=>((S.log[k]||{}).entries||[]).length>=2;
   if(!ok(dkey(d)))d=addDays(d,-1);
@@ -721,17 +732,25 @@ function loadDemo(){
 
 /* ---------- animation plumbing ---------- */
 const A=(id,prop,to,dflt)=>`data-aid="${id}" data-prop="${prop}" data-to="${to}" data-from="${prev[id]!==undefined?prev[id]:dflt}"`;
-function countTo(el,from,to){
-  const t0=performance.now(),dur=800;
-  const f=t=>{const p=clamp((t-t0)/dur,0,1),e=1-Math.pow(1-p,3);el.textContent=nf(from+(to-from)*e);if(p<1)requestAnimationFrame(f)};
+const litFmt=v=>lit(Math.round(v/10)*10);
+// Счётчик продолжается с того числа, что сейчас на экране, а прежний запуск на этом элементе отменяется: быстрые нажатия не дерутся.
+function countTo(el,from,to,fmt=nf,dur=800){
+  const tok=el._tok=(el._tok||0)+1;
+  if(el._live)from=el._v;
+  const t0=performance.now();
+  const f=t=>{if(el._tok!==tok)return;const p=clamp((t-t0)/dur,0,1),e=1-Math.pow(1-p,3),v=from+(to-from)*e;el._v=v;el._live=p<1;el.textContent=fmt(v);if(p<1)requestAnimationFrame(f)};
   requestAnimationFrame(f);
 }
 function runAnims(root){
   $$('[data-aid]',root).forEach(el=>{
     const id=el.dataset.aid,to=el.dataset.to,from=el.dataset.from,prop=el.dataset.prop;
-    if(prop==='count')countTo(el,+from,+to);
-    else{el.style[prop]=from;void el.offsetWidth;requestAnimationFrame(()=>{el.style[prop]=to})}
-    prev[id]=prop==='count'?+to:to;
+    const num=prop==='count'||prop==='litres';
+    if(num)countTo(el,+from,+to,prop==='litres'?litFmt:nf);
+    else{
+      const set=v=>prop.startsWith('--')?el.style.setProperty(prop,v):(el.style[prop]=v);
+      set(from);void el.offsetWidth;requestAnimationFrame(()=>set(to));
+    }
+    prev[id]=num?+to:to;
   });
 }
 let toastT;
@@ -1042,9 +1061,67 @@ function render(){
   if(!S.onboarded){$('#tabbar').hidden=true;renderOb();return}
   $('#tabbar').hidden=false;renderTabs();renderMain({});
 }
+let tabsLang='';
 function renderTabs(){
-  const t=(id,i,l)=>`<button class="tab ${nav.tab===id?'on':''}" data-act="go" data-tab="${id}" aria-label="${l}">${ico(i,24)}<span>${l}</span></button>`;
-  $('#tabbar').innerHTML=t('home','home',L('Сегодня','Today'))+t('progress','chart',L('Прогресс','Progress'))+`<button class="fab" data-act="add" aria-label="${L('Добавить еду','Add food')}">${ico('plus',28)}</button>`+t('coach','chat',L('Коуч','Coach'))+t('profile','user',L('Профиль','Profile'));
+  const bar=$('#tabbar');
+  if(tabsLang!==S.lang||!$('.tabpill',bar)){
+    const t=(id,i,l)=>`<button class="tab" data-act="go" data-tab="${id}" aria-label="${l}">${ico(i,24)}<span>${l}</span></button>`;
+    bar.innerHTML=`<i class="tabpill"></i>`+t('home','home',L('Сегодня','Today'))+t('progress','chart',L('Прогресс','Progress'))+`<button class="fab" data-act="add" aria-label="${L('Добавить еду','Add food')}">${ico('plus',28)}</button>`+t('coach','chat',L('Коуч','Coach'))+t('profile','user',L('Профиль','Profile'));
+    tabsLang=S.lang;
+  }
+  $$('.tab',bar).forEach(b=>b.classList.toggle('on',b.dataset.tab===nav.tab));
+  placeTabPill();
+}
+function placeTabPill(instant){
+  const bar=$('#tabbar'),on=$('.tab.on',bar),p=$('.tabpill',bar);
+  if(!on||!p||bar.hidden)return;
+  const first=!p._placed;
+  if(first||instant)p.style.transition='none';
+  p.style.top=on.offsetTop+'px';p.style.bottom='auto';p.style.height=on.offsetHeight+'px';p.style.width=on.offsetWidth+'px';
+  p.style.transform=`translateX(${on.offsetLeft}px)`;
+  if(first||instant){void p.offsetWidth;p.style.transition='';p._placed=true}
+}
+// Подложка выбранного дня скользит от прежнего дня к новому, а не появляется заново.
+function placeDayPill(){
+  const p=$('.dpill'),on=$('.day.on');if(!p||!on)return;
+  const x=on.offsetLeft,from=prev.dpx;
+  p.style.transition='none';p.style.width=on.offsetWidth+'px';
+  p.style.transform=`translateX(${from!==undefined?from:x}px)`;
+  void p.offsetWidth;
+  p.style.transition='';p.style.transform=`translateX(${x}px)`;
+  prev.dpx=x;
+}
+// Новая запись выезжает на место; если она ниже видимой части, экран плавно докручивается.
+function enterEntry(id,delay){
+  const el=$('#e-'+id);if(!el)return;
+  el.style.setProperty('--ed',(delay||0)+'s');el.classList.add('enter');
+  el.addEventListener('animationend',()=>{el.classList.remove('enter');el.style.removeProperty('--ed')},{once:true});
+  setTimeout(()=>{const sc=el.closest('.screen');if(!sc)return;const r=el.getBoundingClientRect(),b=sc.getBoundingClientRect();if(r.bottom>b.bottom-8||r.top<b.top)el.scrollIntoView({block:'center',behavior:'smooth'})},(delay||0)*1000+120);
+}
+// Вода меняется на месте: без пересборки экрана, поэтому уровень плывёт, волна не сбивается, а число считается плавно.
+function waterTo(ml){
+  const k=nav.day,d=dayObj(k),old=d.water,P=S.plan;
+  d.water=Math.max(0,old+ml);save();
+  const tile=$('#wtile');
+  if(!tile){renderMain({keep:true});return}
+  const now=d.water,pct=Math.min(100,now/P.water*100);
+  $('.liquid',tile).style.setProperty('--y',(100-pct)+'%');prev.wl=(100-pct)+'%';
+  const wn=$('.wn',tile);countTo(wn,old,now,litFmt,700);prev.wn=now;
+  const wv=$('.waves',tile);wv.classList.toggle('off',pct<1.5);
+  if(ml>0){wv.classList.remove('splash');void wv.offsetWidth;wv.classList.add('splash');wv.addEventListener('animationend',e=>{if(e.target===wv)wv.classList.remove('splash')},{once:true})}
+  if(old<P.water&&now>=P.water)toast(L('Норма воды выполнена','Daily water goal reached'));
+  refreshTip(k);
+}
+function refreshTip(k){
+  const tip=tipFor(k),el=$('.screen .tip');
+  if(!tip){if(el)el.remove();return}
+  const html=`<span class="bi">${ico('spark',18)}</span><div><b>${tip.t}</b><p>${tip.x}</p></div>`;
+  if(el){
+    if(el.dataset.sig===tip.t){const p=$('p',el);if(p&&p.textContent!==tip.x)p.textContent=tip.x;return}
+    el.dataset.sig=tip.t;el.innerHTML=html;el.classList.remove('swap');void el.offsetWidth;el.classList.add('swap');return;
+  }
+  const b=$('.screen .bento');if(!b)return;
+  b.insertAdjacentHTML('afterend',`<section class="card dark tip swap" data-sig="${esc(tip.t)}" style="margin-top:10px">${html}</section>`);
 }
 function renderMain(o){
   o=o||{};
@@ -1054,6 +1131,8 @@ function renderMain(o){
   st.innerHTML=`<div class="screen ${nav.tab==='coach'?'coachscreen':''} ${ani?'view':''}" data-tab="${nav.tab}">${fn(ani)}</div>`;
   const sc=$('.screen',st);if(top)sc.scrollTop=top;
   runAnims(st);
+  if(nav.tab==='home')placeDayPill();
+  if(o.enter)enterEntry(o.enter,o.delay);
   if(nav.tab==='coach'){const m=$('#msgs');if(m)m.scrollTop=m.scrollHeight}
 }
 
@@ -1190,7 +1269,9 @@ function entryH(e,i){
   return`<article class="entry ${e.type==='snack'?'is-snack':''}" id="e-${e.id}" style="--i:${i}"><button class="erow" data-act="toggleEntry" data-id="${e.id}"><span class="eicon">${ico(ty.icon,20)}</span><span class="ebody"><b>${esc(e.title)}</b><small>${esc(e.t)} · ${T(ty.label)}${e.src==='photo'?L(' · по фото',' · from photo'):''}</small></span><span class="ekcal num">${nf(e.kcal)}<small>${u.kcal}</small></span></button>
   <div class="edetail"><div><div class="emac num"><span>${L('Б','P')} <b>${nf(e.p)}</b></span><span>${L('Ж','F')} <b>${nf(e.f)}</b></span><span>${L('У','C')} <b>${nf(e.c)}</b></span>${e.sugar?`<span>${L('Сахар','Sugar')} <b>${nf(e.sugar)}</b></span>`:''}</div><div class="eact"><button class="mini" data-act="repeat" data-id="${e.id}">${L('Повторить','Repeat')}</button><button class="mini danger" data-act="delEntry" data-id="${e.id}">${L('Удалить','Delete')}</button></div></div></div></article>`;
 }
-const WAVE='M0 12'+' q7.5 -8 15 0'+' t15 0'.repeat(15)+' V24 H0 Z';
+// Волна: 8 полуволн на 400 единиц, svg вдвое шире плитки и сдвигается ровно на половину, поэтому петля бесшовная.
+const WAVE='M0 16 V8 q25 -10 50 0'+' t50 0'.repeat(7)+' V16 Z';
+const wavePhase=d=>'-'+((performance.now()/1000)%d).toFixed(2)+'s';
 function tile(cls,label,val,goal,id){
   const pc=Math.min(100,goal?val/goal*100:0),u=U();
   return`<div class="bt ${cls}"><small>${label}</small><div class="v num">${nf(val)}<span>/ ${nf(goal)} ${u.g}</span></div><div class="bar"><i ${A(id,'width',pc+'%','0%')}></i></div></div>`;
@@ -1208,11 +1289,11 @@ function vHome(ani){
   const hint=(BACKEND&&isIOS()&&!isStandalone()&&!S.hintDone)?`<div class="note" style="margin-bottom:12px">${ico('info',18)}<span>${L('Добавьте Crumb на экран «Домой»: «Поделиться» → «На экран “Домой”». Так он открывается как обычное приложение и сможет присылать уведомления.','Add Crumb to your Home Screen: Share → Add to Home Screen. It then opens like a normal app and can send notifications.')}</span><button class="icon-btn" style="width:30px;height:30px;flex:none" data-act="hintDone" aria-label="${L('Закрыть','Close')}">${ico('x',14)}</button></div>`:'';
   return`<div class="top"><div><span class="eyebrow">${cap(T(DF[d.getDay()]))}, ${dm(d)}</span><h1 class="h1">${isToday?L('Сегодня','Today'):L('День','Day')}</h1></div>${st?`<span class="pill">${ico('flame',16)}${st} ${plDays(st)}</span>`:''}</div>
   ${hint}
-  <div class="days">${strip.join('')}</div>
+  <div class="days"><i class="dpill"></i>${strip.join('')}</div>
   <div class="bento ${ani?'stag':''}">
    <div class="bt a" style="--i:0"><div><small>${over?L('Сверх нормы','Over the target'):L('Осталось','Left today')}</small><div class="n num" ${A('kc','count',Math.abs(left),0)}>${nf(Math.abs(left))}</div><small>${L('из','of')} ${nf(P.kcal)} ${u.kcal} · ${L('съедено','eaten')} ${nf(t.kcal)}</small></div><div class="bar"><i ${A('kb','width',(over?100:eaten)+'%','0%')} style="${over?'background:var(--ivory)':''}"></i></div></div>
-   <div class="bt w" style="--i:1"><div class="liquid" ${A('wl','height',wp+'%','0%')}><svg class="wave" viewBox="0 0 240 24" preserveAspectRatio="none" style="opacity:${wp<2?0:1}"><path d="${WAVE}"/></svg></div>
-    <div class="wtop"><div><small>${L('Вода','Water')}</small><div class="v num">${lit(water)}<span>/ ${lit(P.water)} ${u.l}</span></div></div><button class="mini undo" data-act="water" data-ml="-250" aria-label="${L('Убрать 250 мл','Remove 250 ml')}">−250</button></div>
+   <div class="bt w" id="wtile" style="--i:1"><div class="liquid" ${A('wl','--y',(100-wp)+'%','100%')}><div class="waves ${wp<1.5?'off':''}"><svg class="wave b" viewBox="0 0 400 16" preserveAspectRatio="none" style="animation-delay:${wavePhase(11)}"><path d="${WAVE}"/></svg><svg class="wave" viewBox="0 0 400 16" preserveAspectRatio="none" style="animation-delay:${wavePhase(7)}"><path d="${WAVE}"/></svg></div></div>
+    <div class="wtop"><div><small>${L('Вода','Water')}</small><div class="v num"><span class="wn" ${A('wn','litres',water,0)}>${lit(water)}</span><span>/ ${lit(P.water)} ${u.l}</span></div></div><button class="mini undo" data-act="water" data-ml="-250" aria-label="${L('Убрать 250 мл','Remove 250 ml')}">−250</button></div>
     <div class="wbtns"><button class="mini" data-act="water" data-ml="150">+150</button><button class="mini" data-act="water" data-ml="250">+250</button><button class="mini" data-act="water" data-ml="500">+500</button></div></div>
    ${tile('p',L('Белки','Protein'),t.p,P.p,'m1')}
    ${tile('c',L('Углеводы','Carbs'),t.c,P.c,'m3')}
@@ -1220,7 +1301,7 @@ function vHome(ani){
    <button class="bt s" data-act="addSnack" style="--i:5"><small>${L('Перекусы','Snacks')}</small><div class="v num">${t.snackN} · ${nf(t.snackK)}<span>${u.kcal}</span></div><span class="sub2">${t.kcal?share+L('% дня','% of the day'):L('Нажмите, чтобы добавить','Tap to add')}</span><span class="plus">${ico('plus',16)}</span></button>
    <div class="bt l" style="--i:6"><small>${L('Лента дня','The day in a tape')}</small><div class="tape">${tape}</div><div class="legend"><span><em style="background:var(--slate)"></em>${L('Приёмы пищи','Meals')}</span><span><em style="background:var(--or)"></em>${L('Перекусы','Snacks')}</span></div></div>
   </div>
-  ${tip?`<section class="card dark tip" style="margin-top:10px"><span class="bi">${ico('spark',18)}</span><div><b>${tip.t}</b><p>${tip.x}</p></div></section>`:''}
+  ${tip?`<section class="card dark tip" data-sig="${esc(tip.t)}" style="margin-top:10px"><span class="bi">${ico('spark',18)}</span><div><b>${tip.t}</b><p>${tip.x}</p></div></section>`:''}
   <div class="sec-h"><h2 class="h2">${L('Дневник','Diary')}</h2><span class="muted num" style="font-size:13px">${nf(t.kcal)} ${u.kcal}</span></div>
   ${ents.length?`<div class="${ani?'stag':''}">${ents.map(entryH).join('')}</div>`:`<div class="card empty">${logo(44,'#D97757','#FAF9F5')}<b>${L('Здесь пока пусто','Nothing here yet')}</b><p class="sub">${L('Запишите первый приём пищи или хотя бы глоток воды. Мелочи считаются.','Log your first meal or at least a sip of water. The small stuff counts.')}</p><button class="btn sm" data-act="add">${L('Добавить еду','Add food')}</button></div>`}`;
 }
@@ -1385,7 +1466,8 @@ function remindersBlock(sw){
   if(!PUSH.sub)return `<button class="btn" style="margin-top:12px" data-act="pushOn" ${PUSH.busy?'disabled':''}>${L('Включить уведомления','Turn on notifications')}</button>${PUSH.err?`<div class="err" style="margin-top:10px">${esc(PUSH.err)}</div>`:''}${note(L('Напомним про воду, вечерние перекусы и взвешивание по времени вашего часового пояса.','We’ll remind you about water, evening snacks and weigh-ins on your own time zone.'))}`;
   return sws+`<div class="row" style="margin-top:12px;flex-wrap:wrap"><button class="mini" data-act="pushTest">${L('Отправить тест','Send a test')}</button><button class="mini danger" data-act="pushOff">${L('Выключить','Turn off')}</button></div>`;
 }
-const BUILD='2026-10-26.5';
+window.addEventListener('resize',()=>{placeTabPill(true);if(nav.tab==='home')placeDayPill()});
+const BUILD='2026-10-26.6';
 function vProfile(ani){
   const p=S.profile,P=S.plan,u=U();
   const kv=(a,b)=>`<div class="kv"><span>${a}</span><b>${b}</b></div>`;
@@ -1433,6 +1515,13 @@ function bindGrab(){
 }
 function paintSheet(){
   if(!sh)return;
+  const sig=[sh.view,sh.tab,sh.busy,!!sh.url,!!sh.err].join('|'),swap=sh._sig!==undefined&&sh._sig!==sig;sh._sig=sig;
+  paintSheetNow();
+  if(!swap)return;
+  const B=$('#shBody'),F=$('#shFoot');if(B)B.scrollTop=0;
+  [B,F].forEach(el=>{if(!el)return;el.classList.remove('swap');void el.offsetWidth;el.classList.add('swap');el.addEventListener('animationend',()=>el.classList.remove('swap'),{once:true})});
+}
+function paintSheetNow(){
   const Tt=$('#shTitle'),B=$('#shBody'),F=$('#shFoot');if(!Tt)return;
   const v=sh.view;
   if(v==='add'){Tt.textContent=L('Добавить еду','Add food');B.innerHTML=addBody();F.innerHTML=addFoot()}
@@ -1508,16 +1597,22 @@ const ACT={
  addSnack(){openSheet({tab:'quick'})},
  day(t){nav.day=t.dataset.k;renderMain({keep:true})},
  water(t){
-   const ml=+t.dataset.ml,d=dayObj(nav.day);d.water=Math.max(0,d.water+ml);save();
-   renderMain({keep:true});if(ml>0){const w=$('.bt.w');if(w)w.classList.add('pulse')}
+   waterTo(+t.dataset.ml);
  },
  toggleEntry(t){const e=$('#e-'+t.dataset.id);if(e)e.classList.toggle('open')},
  repeat(t){
    const e=dayObj(nav.day).entries.find(x=>x.id===t.dataset.id);if(!e)return;
-   addEntry(nav.day,Object.assign({},e,{id:undefined,t:nav.day===todayKey()?nowT():e.t}));
-   toast(L('Записано ещё раз · '+nf(e.kcal)+' ккал','Logged again · '+nf(e.kcal)+' kcal'));renderMain({keep:true});
+   const nid=addEntry(nav.day,Object.assign({},e,{t:nav.day===todayKey()?nowT():e.t}));
+   toast(L('Записано ещё раз · '+nf(e.kcal)+' ккал','Logged again · '+nf(e.kcal)+' kcal'));renderMain({keep:true,enter:nid});
  },
- delEntry(t){const d=dayObj(nav.day);d.entries=d.entries.filter(x=>x.id!==t.dataset.id);save();toast(L('Запись удалена','Entry deleted'));renderMain({keep:true})},
+ delEntry(t){
+   const id=t.dataset.id,el=$('#e-'+id);
+   if(el&&el.classList.contains('leaving'))return;
+   const done=()=>{const d=dayObj(nav.day);d.entries=d.entries.filter(x=>x.id!==id);save();toast(L('Запись удалена','Entry deleted'));renderMain({keep:true})};
+   if(!el){done();return}
+   el.style.height=el.offsetHeight+'px';void el.offsetHeight;el.classList.add('leaving');el.style.height='0px';el.style.marginTop='0';
+   setTimeout(done,360);
+ },
  closeSheet(){closeSheet()},
  shTab(t){if(sh.busy)return;sh.tab=t.dataset.tab;sh.err='';paintSheet()},
  ex(t){sh.text=t.dataset.t;paintSheet();const x=$('#txt');if(x)x.focus()},
@@ -1529,14 +1624,14 @@ const ACT={
  cancelAI(){if(sh.ctl)try{sh.ctl.abort()}catch(e){}sh.busy=false;stopTicker();paintSheet()},
  quick(t){
    const q=QUICK[+t.dataset.i],tm=sh.day===todayKey()?nowT():'12:00',nm=T(q[0]);
-   addEntry(sh.day,{t:tm,type:'snack',title:nm,kcal:q[1],p:q[2],f:q[3],c:q[4],sugar:q[5],fiber:0,src:'quick'});
+   const nid=addEntry(sh.day,{t:tm,type:'snack',title:nm,kcal:q[1],p:q[2],f:q[3],c:q[4],sugar:q[5],fiber:0,src:'quick'});
    sh.added++;t.classList.remove('added');void t.offsetWidth;t.classList.add('added');
-   toast(L('Записано: '+nm+' · '+q[1]+' ккал','Logged: '+nm+' · '+q[1]+' kcal'));const f=$('#shFoot');if(f)f.innerHTML=addFoot();renderMain({keep:true});
+   toast(L('Записано: '+nm+' · '+q[1]+' ккал','Logged: '+nm+' · '+q[1]+' kcal'));const f=$('#shFoot');if(f)f.innerHTML=addFoot();renderMain({keep:true,enter:nid});
  },
  again(t){
    const src=recent().find(x=>x.id===t.dataset.id);if(!src)return;
-   addEntry(sh.day,Object.assign({},src,{id:undefined,t:sh.day===todayKey()?nowT():src.t}));
-   sh.added++;toast(L('Записано: ','Logged: ')+src.title);const f=$('#shFoot');if(f)f.innerHTML=addFoot();renderMain({keep:true});
+   const nid=addEntry(sh.day,Object.assign({},src,{t:sh.day===todayKey()?nowT():src.t}));
+   sh.added++;toast(L('Записано: ','Logged: ')+src.title);const f=$('#shFoot');if(f)f.innerHTML=addFoot();renderMain({keep:true,enter:nid});
  },
  itemMinus(t){const it=sh.draft.items[+t.dataset.i];it.s=Math.max(.1,Math.round((it.s-.1)*10)/10);paintSheet()},
  itemPlus(t){const it=sh.draft.items[+t.dataset.i];it.s=Math.min(5,Math.round((it.s+.1)*10)/10);paintSheet()},
@@ -1546,8 +1641,8 @@ const ACT={
  applyFix(){askFix(sh.fix)},
  saveDraft(){
    const d=sh.draft,tot=sumItems(d.items);if(!d.items.length)return;
-   addEntry(sh.day,{t:d.t||nowT(),type:d.type,title:d.title||L('Приём пищи','Meal'),kcal:Math.round(tot.kcal),p:Math.round(tot.p),f:Math.round(tot.f),c:Math.round(tot.c),sugar:Math.round(tot.sugar),fiber:Math.round(tot.fiber),src:d.src});
-   const msg=L(T(TYPES[d.type].label)+' записан · '+nf(tot.kcal)+' ккал',T(TYPES[d.type].label)+' logged · '+nf(tot.kcal)+' kcal');const dayK=sh.day;closeSheet();nav.tab='home';nav.day=dayK||nav.day;renderTabs();renderMain({keep:false});toast(msg);
+   const nid=addEntry(sh.day,{t:d.t||nowT(),type:d.type,title:d.title||L('Приём пищи','Meal'),kcal:Math.round(tot.kcal),p:Math.round(tot.p),f:Math.round(tot.f),c:Math.round(tot.c),sugar:Math.round(tot.sugar),fiber:Math.round(tot.fiber),src:d.src});
+   const msg=L(T(TYPES[d.type].label)+' записан · '+nf(tot.kcal)+' ккал',T(TYPES[d.type].label)+' logged · '+nf(tot.kcal)+' kcal');const dayK=sh.day,stay=nav.tab==='home';closeSheet();nav.tab='home';nav.day=dayK||nav.day;renderTabs();if(stay)renderMain({keep:true,enter:nid,delay:.3});else renderMain({enter:nid,delay:.5});toast(msg);
  },
  weightOpen(){openSheet({view:'weight'})},
  saveWeight(){
