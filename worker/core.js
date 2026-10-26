@@ -18,6 +18,7 @@
 //   ACCOUNT_DAILY_LIMIT ИИ-запросов в сутки на аккаунт (по умолчанию 40)
 //   MAX_ACCOUNTS        потолок числа аккаунтов (по умолчанию 5000), защита хранилища от массовой регистрации
 //   REGISTER_PER_IP_DAY регистраций в сутки с одного IP (по умолчанию 5)
+//   HOME_URL            основной адрес приложения (https://crumb.fit): на старом адресе показывается подсказка о переезде
 //   GEMINI_HEDGE_MS     через сколько миллисекунд без ответа основной модели параллельно спросить запасную и взять того, кто ответит первым (по умолчанию 6000, 0 выключает)
 //   GEMINI_THINKING     "default": не ограничивать «размышления» модели
 //   GEMINI_FALLBACK_MODEL  запасная модель, если основная перегружена (503) или упёрлась в лимит (по умолчанию gemini-3.5-flash-lite, "off" выключает)
@@ -186,6 +187,7 @@ export async function handleFetch(req, env) {
       open: openOn(env),
       push: Boolean(env.HUB),
       accounts: Boolean(env.HUB),
+      home: /^https:\/\/[a-z0-9.-]+$/i.test(String(env.HOME_URL || '')) ? String(env.HOME_URL) : '', // основной адрес приложения, если он переехал
       limit: num(env.OPEN_DAILY_LIMIT, 20),
     });
   }

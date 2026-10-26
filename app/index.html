@@ -775,11 +775,11 @@ function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('on');clea
 
 /* ---------- AI ---------- */
 let SAMPLE=null,SAMPLE_IMG=false,IMG_TYPES='image/jpeg,image/png,image/webp';
-let BACKEND=false;
+let BACKEND=false,HOME='';
 const getPass=()=>{try{return localStorage.getItem('crumb-pass')||''}catch(e){return''}};
 async function initBackend(){
   if(SAMPLE||window.claude||!/^https?:$/.test(location.protocol))return;
-  try{const r=await fetch('/api/health',{cache:'no-store'});if(r.ok){const j=await r.json();BACKEND=!!(j&&j.ai)}}catch(e){BACKEND=false}
+  try{const r=await fetch('/api/health',{cache:'no-store'});if(r.ok){const j=await r.json();BACKEND=!!(j&&j.ai);HOME=(j&&j.home)||''}}catch(e){BACKEND=false}
 }
 (async()=>{
   try{
@@ -1309,10 +1309,12 @@ function vHome(ani){
   const tape=ents.map(e=>`<i class="${e.type==='snack'?'sn':'ml'}" style="width:${Math.min(100,e.kcal/P.kcal*100)}%" title="${esc(e.title)}"></i>`).join('');
   const share=t.kcal?Math.round(t.snackK/t.kcal*100):0;
   const eaten=Math.min(100,t.kcal/P.kcal*100);
+  let moveHint='';
+  try{const to=HOME&&new URL(HOME);if(to&&to.origin!==location.origin&&!S.moveDone)moveHint=`<div class="note warn" style="margin-bottom:12px">${ico('info',18)}<span>${L(`У приложения новый адрес: <b>${esc(to.host)}</b>. ${getTok()?'Откройте его и войдите тем же логином и паролем.':'Создайте здесь аккаунт, затем войдите в нём на новом адресе: данные перенесутся.'}`,`The app has a new address: <b>${esc(to.host)}</b>. ${getTok()?'Open it and sign in with the same login and password.':'Create an account here, then sign in with it at the new address: your data will follow.'}`)} <a class="mini" style="display:inline-flex;align-items:center;margin-left:6px;text-decoration:none" href="${esc(to.origin)}/">${L('Открыть','Open')}</a></span><button class="icon-btn" style="width:30px;height:30px;flex:none" data-act="moveDone" aria-label="${L('Закрыть','Close')}">${ico('x',14)}</button></div>`}catch(e){}
   const accHint=(BACKEND&&!getTok()&&S.onboarded&&!S.accHintDone&&!S.demo)?`<div class="note" style="margin-bottom:12px">${ico('user',18)}<span>${L('Создайте аккаунт: цели, вес и продукты сохранятся в облаке и будут на любом телефоне.','Create an account: your goals, weight and foods are saved in the cloud and follow you to any phone.')} <button class="mini" style="margin-left:6px" data-act="authOpen" data-mode="register">${L('Создать','Create')}</button></span><button class="icon-btn" style="width:30px;height:30px;flex:none" data-act="accHintDone" aria-label="${L('Закрыть','Close')}">${ico('x',14)}</button></div>`:'';
   const hint=(BACKEND&&isIOS()&&!isStandalone()&&!S.hintDone)?`<div class="note" style="margin-bottom:12px">${ico('info',18)}<span>${L('Добавьте Crumb на экран «Домой»: «Поделиться» → «На экран “Домой”». Так он открывается как обычное приложение и сможет присылать уведомления.','Add Crumb to your Home Screen: Share → Add to Home Screen. It then opens like a normal app and can send notifications.')}</span><button class="icon-btn" style="width:30px;height:30px;flex:none" data-act="hintDone" aria-label="${L('Закрыть','Close')}">${ico('x',14)}</button></div>`:'';
   return`<div class="top"><div><span class="eyebrow">${cap(T(DF[d.getDay()]))}, ${dm(d)}</span><h1 class="h1">${isToday?L('Сегодня','Today'):L('День','Day')}</h1></div>${st?`<span class="pill">${ico('flame',16)}${st} ${plDays(st)}</span>`:''}</div>
-  ${hint||accHint}
+  ${moveHint||hint||accHint}
   <div class="days"><i class="dpill"></i>${strip.join('')}</div>
   <div class="bento ${ani?'stag':''}">
    <div class="bt a" style="--i:0"><div><small>${over?L('Сверх нормы','Over the target'):L('Осталось','Left today')}</small><div class="n num" ${A('kc','count',Math.abs(left),0)}>${nf(Math.abs(left))}</div><small>${L('из','of')} ${nf(P.kcal)} ${u.kcal} · ${L('съедено','eaten')} ${nf(t.kcal)}</small></div><div class="bar"><i ${A('kb','width',(over?100:eaten)+'%','0%')} style="${over?'background:var(--ivory)':''}"></i></div></div>
@@ -1491,7 +1493,7 @@ function remindersBlock(sw){
   return sws+`<div class="row" style="margin-top:12px;flex-wrap:wrap"><button class="mini" data-act="pushTest">${L('Отправить тест','Send a test')}</button><button class="mini danger" data-act="pushOff">${L('Выключить','Turn off')}</button></div>`;
 }
 window.addEventListener('resize',()=>{placeTabPill(true);if(nav.tab==='home')placeDayPill()});
-const BUILD='2026-10-26.8';
+const BUILD='2026-10-26.9';
 function acctCard(kv,syncTxt){
   if(!BACKEND)return'';
   const row='<div class="row" style="margin-top:12px;gap:8px;flex-wrap:wrap">';
@@ -1802,6 +1804,7 @@ const ACT={
  acctSub(t){if(!sh)return;sh.sub=t.dataset.sub||null;sh.cp='';sh.np='';paintSheet()},
  acctPass(){acctPass()},acctRec(){acctRec()},acctDel(){acctDel()},
  logout(){(async()=>{try{await authApi('logout',{})}catch(e){}setSession('');dropSync();pushResync();toast(L('Вы вышли из аккаунта. Данные остались на этом устройстве.','Signed out. Your data stays on this device.'));if(S.onboarded)renderMain({keep:true});else render()})()},
+ moveDone(){S.moveDone=true;save();renderMain({keep:true})},
  accHintDone(){S.accHintDone=true;save();renderMain({keep:true})},
  savePass(){const v=(($('#passIn')||{}).value||'').trim();try{localStorage.setItem('crumb-pass',v)}catch(e){}toast(L('Код сохранён','Code saved'));SYNC=null;docRef=null;liveWatch=false;initSync();pushInit()},
  lang(t){S.lang=t.dataset.val==='en'?'en':'ru';save();confirmReset=false;if(sh)closeSheet();render()},
