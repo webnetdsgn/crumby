@@ -29,24 +29,27 @@ flowchart LR
 
 ## Контракт сервера
 
-`POST /api/gemini`, заголовок `x-crumb-pass: <APP_PASSCODE>`
+Приложение отправляет серверу **задачу и данные**, а не текст для модели. Правила оценки еды и коуча хранятся только на сервере (`worker/core.js`: `FOOD_RULES`, `COACH_RULES`), поэтому чужие не могут использовать сервер как бесплатный чат.
 
-```json
-{ "system": "правила оценки или коуча", "messages": [{ "role": "user", "text": "..." }],
-  "image": { "mime": "image/jpeg", "data": "<base64>" }, "json": true }
-```
+`POST /api/ai`, заголовки: `x-crumb-id` (анонимный номер устройства), необязательно `x-crumb-pass` (личный код).
 
-Ответ: `{ "text": "...", "model": "gemini-3.1-flash-lite" }`. Ошибки: `401 bad_pass`, `429 rate_limited`, `413 too_large`, `502 upstream` или `empty`, `500 no_key`.
+| Задача | Тело запроса | Ответ |
+|---|---|---|
+| `food` | `{task:"food", lang, diet?, text? \| image:{mime,data}+note? \| previous+fix}` | `{text}`: JSON с оценкой еды |
+| `coach` | `{task:"coach", lang, ctx, messages:[{role,text}], stream:true}` | поток SSE от Gemini |
+| `ping` | `{task:"ping", image?}` | `{text}`: проверка связи |
 
-`GET /api/health` отвечает `{ "ok": true, "ai": true }`, когда на сервере заданы и ключ, и код доступа. По этому ответу приложение понимает, что сервер подключён.
+Ошибки: `401 bad_pass`, `429 limit_day | limit_ip | limit_global | rate_limited`, `413 too_large`, `400 bad_request`, `502 upstream | empty`, `504 timeout`, `500 no_key`.
 
-Сервер намеренно тонкий: правила оценки еды и промпт коуча лежат в `app/index.html` (`foodRules()`, `coachCtx()`), сервер только проверяет код и пересылает запрос в Gemini. Для пробной версии с одним пользователем этого достаточно. Перед открытием для посторонних правила переедут на сервер, иначе код доступа превращает прослойку в общий прокси к Gemini.
+`GET /api/health`: `{ok, ai, open, push, limit}`. `/api/state` (синхронизация) доступна только с личным кодом, `/api/push/*` (уведомления) всем.
 
-Запрос к Gemini (REST): `POST https://generativelanguage.googleapis.com/v1beta/models/<model>:generateContent`, заголовок `x-goog-api-key`, `responseMimeType = application/json` при `json: true`.
+`POST /api/gemini` (произвольный текст для модели) оставлен только для владельца и людей с личным кодом.
+
+Запрос к Gemini (REST): `POST https://generativelanguage.googleapis.com/v1beta/models/<model>:generateContent` (или `streamGenerateContent?alt=sse`), заголовок `x-goog-api-key`, `responseMimeType = application/json` для задач с JSON.
 
 ## Что дальше
 
 1. Тест точности на 10–30 взвешенных блюдах, выбор модели.
 2. Вход через Supabase (регион ЕС) и облачная синхронизация вместо хранения в браузере.
-3. Лимит 3 бесплатных ИИ-фото в день на пользователя, платный уровень Gemini, правила оценки на сервере.
+3. Платный уровень Gemini перед широким запуском (на бесплатном Google может использовать данные).
 4. Настоящая PWA: офлайн-режим и свой домен.

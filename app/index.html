@@ -768,7 +768,8 @@ const aiErr=c=>({
   no_key:L('На сервере не задан ключ Gemini.','The server has no Gemini key set.'),
   timeout:L('Gemini отвечает слишком долго. Попробуйте ещё раз.','Gemini is taking too long. Try again.'),
   too_large:L('Фото слишком большое. Попробуйте другое или снимите ближе.','The photo is too large. Try another one or shoot closer.'),
-  limit_day:L('Дневной лимит ИИ-запросов исчерпан. Продолжим завтра.','The daily AI limit is used up. Back tomorrow.')
+  limit_day:L('Дневной лимит ИИ-запросов исчерпан. Продолжим завтра.','The daily AI limit is used up. Back tomorrow.'),
+  limit_global:L('Сегодня бесплатный лимит ИИ у всех исчерпан. Попробуйте завтра.','Today’s free AI limit is used up for everyone. Try again tomorrow.')
 })[c];
 const foodRules=()=>`You are a nutritionist inside a calorie-tracking app. Estimate the meal and reply with ONLY JSON, no prose, no markdown:
 {"title":"short name","items":[{"name":"food or dish","grams":number,"kcal":number,"p":number,"f":number,"c":number,"sugar":number,"fiber":number}],"confidence":number from 0 to 1,"note":"one short sentence: what is not obvious or what you assumed","questions":[{"q":"short question","options":["answer","answer"]}]}
@@ -823,17 +824,16 @@ function parseJSON(t){
   throw{code:'invalid_json'};
 }
 const errDetail=(status,j)=>[j&&j.status?'Gemini '+j.status:(status?'HTTP '+status:''),j&&j.finish?'finish '+j.finish:'',j&&j.detail?String(j.detail).slice(0,160):''].filter(Boolean).join(' · ');
-const errCode=(status,j)=>j&&j.error==='limit_day'?'limit_day':j&&j.error==='too_large'?'too_large':j&&j.error==='bad_pass'?'bad_pass':(status===429||(j&&j.error==='rate_limited'))?'rate_limited':j&&j.error==='no_key'?'no_key':(j&&j.error==='timeout')?'timeout':j&&j.error==='empty'?'refused':'upstream_error';
-async function gem({system,messages,image,json,signal,maxTokens,timeoutMs=45000}){
+const errCode=(status,j)=>j&&(j.error==='limit_day'||j.error==='limit_ip')?'limit_day':j&&j.error==='limit_global'?'limit_global':j&&j.error==='too_large'?'too_large':j&&j.error==='bad_pass'?'bad_pass':(status===429||(j&&j.error==='rate_limited'))?'rate_limited':j&&j.error==='no_key'?'no_key':(j&&j.error==='timeout')?'timeout':j&&j.error==='empty'?'refused':'upstream_error';
+async function imgPayload(file){const blob=await prepImage(file);return{mime:blob.type||'image/jpeg',data:await blobToB64(blob)}}
+async function aiCall(body,{signal,timeoutMs=45000}={}){
   const t0=performance.now();
   const ctl=new AbortController();let timedOut=false;
   const tm=setTimeout(()=>{timedOut=true;ctl.abort()},timeoutMs);
   if(signal)signal.addEventListener('abort',()=>ctl.abort());
-  const body={system,messages,json:!!json,maxTokens};
-  if(image)body.image={mime:image.type||'image/jpeg',data:await blobToB64(image)};
   let r,j={};
   try{
-    r=await fetch('/api/gemini',{method:'POST',headers:{'content-type':'application/json','x-crumb-pass':getPass()},body:JSON.stringify(body),signal:ctl.signal});
+    r=await fetch('/api/ai',{method:'POST',headers:authHeaders(),body:JSON.stringify(body),signal:ctl.signal});
     try{j=await r.json()}catch(e){}
   }catch(e){
     if(timedOut)throw{code:'timeout'};
@@ -845,13 +845,13 @@ async function gem({system,messages,image,json,signal,maxTokens,timeoutMs=45000}
   return j.text;
 }
 // Ответ приходит кусками: текст появляется сразу, а не после полной генерации.
-async function gemStream({system,messages,maxTokens,onText,timeoutMs=60000}){
+async function aiStream(body,{onText,timeoutMs=60000}={}){
   const t0=performance.now();let first=0,full='';
   const ctl=new AbortController();let timedOut=false;
   const tm=setTimeout(()=>{timedOut=true;ctl.abort()},timeoutMs);
   try{
     let r;
-    try{r=await fetch('/api/gemini',{method:'POST',headers:{'content-type':'application/json','x-crumb-pass':getPass()},body:JSON.stringify({system,messages,maxTokens,stream:true}),signal:ctl.signal})}
+    try{r=await fetch('/api/ai',{method:'POST',headers:authHeaders(),body:JSON.stringify(body),signal:ctl.signal})}
     catch(e){throw{code:timedOut?'timeout':'upstream_error'}}
     if(!r.ok){let j={};try{j=await r.json()}catch(e){}throw{code:errCode(r.status,j),detail:errDetail(r.status,j)}}
     const reader=r.body.getReader(),dec=new TextDecoder();let buf='';
@@ -886,16 +886,16 @@ async function runAiTest(){
     catch(e){lines[i]='✗ '+name+' · '+(aiErr(e&&e.code)||L('ошибка','error'))+(e&&e.detail?' ['+e.detail+']':'')+(e&&e.code?' ('+e.code+')':'')}
     show();
   };
-  await step(L('Сервер','Server'),async()=>{const r=await fetch('/api/health',{cache:'no-store'});const j=await r.json();if(!j.ai)throw{code:'no_key'};return L('ключ и код заданы','key and code set')});
-  await step(L('Текст','Text'),async()=>{const t=await gem({system:'Reply with JSON only.',messages:[{role:'user',text:'Return {"ok":true}'}],json:true,maxTokens:256,timeoutMs:30000});return t.replace(/\s+/g,' ').slice(0,50)});
+  await step(L('Сервер','Server'),async()=>{const r=await fetch('/api/health',{cache:'no-store'});const j=await r.json();if(!j.ai)throw{code:'no_key'};return L('сервер и ключ в порядке','server and key are fine')});
+  await step(L('Текст','Text'),async()=>{const t=await aiCall({task:'ping'},{timeoutMs:30000});return t.replace(/\s+/g,' ').slice(0,50)});
   await step(L('Фото','Photo'),async()=>{
     const c=document.createElement('canvas');c.width=c.height=96;const g=c.getContext('2d');g.fillStyle='#fff';g.fillRect(0,0,96,96);g.fillStyle='#d11';g.beginPath();g.arc(48,48,30,0,7);g.fill();
     const blob=await new Promise(r=>c.toBlob(r,'image/jpeg',.9));
-    const t=await gem({system:'Reply with JSON only.',messages:[{role:'user',text:'What is the color of the circle? Return {"color":"..."}'}],image:blob,json:true,maxTokens:256,timeoutMs:30000});
+    const t=await aiCall({task:'ping',image:{mime:'image/jpeg',data:await blobToB64(blob)}},{timeoutMs:30000});
     return t.replace(/\s+/g,' ').slice(0,50);
   });
   await step(L('Оценка еды','Food estimate'),async()=>{
-    const t=await gem({system:foodRules(),messages:[{role:'user',text:'Description: "a pack of Hot Tamales candy, 440 kcal on the label"'}],json:true,maxTokens:2500,timeoutMs:45000});
+    const t=await aiCall({task:'food',lang:S.lang,diet:'',text:'a pack of Hot Tamales candy, 440 kcal on the label'},{timeoutMs:45000});
     const f=normFood(parseJSON(t));if(!f.items.length)throw{code:'empty'};
     return f.title+' · '+nf(sumItems(f.items).kcal)+' kcal';
   });
@@ -905,7 +905,8 @@ async function runAiTest(){
 const PUSH={cfg:null,supported:false,sub:false,perm:'default',busy:false,err:''};
 const isIOS=()=>/iPad|iPhone|iPod/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
 const isStandalone=()=>navigator.standalone===true||(window.matchMedia&&matchMedia('(display-mode: standalone)').matches);
-const authHeaders=()=>({'content-type':'application/json','x-crumb-pass':getPass()});
+const getId=()=>{try{let id=localStorage.getItem('crumb-id');if(!id||!/^[A-Za-z0-9_-]{16,64}$/.test(id)){const a=new Uint8Array(16);crypto.getRandomValues(a);id=btoa(String.fromCharCode(...a)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');localStorage.setItem('crumb-id',id)}return id}catch(e){return 'anon-'+Math.random().toString(36).slice(2,12)+'xxxxxx'}};
+const authHeaders=()=>({'content-type':'application/json','x-crumb-id':getId(),'x-crumb-pass':getPass()});
 const b64uBytes=s=>{const p='='.repeat((4-s.length%4)%4),b=atob((s+p).replace(/-/g,'+').replace(/_/g,'/'));return Uint8Array.from(b,c=>c.charCodeAt(0))};
 const withTimeout=(p,ms)=>Promise.race([p,new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),ms))]);
 async function setMeta(k,v){try{const c=await caches.open('crumb-meta');await c.put('/__'+k,new Response(String(v)))}catch(e){}}
@@ -932,7 +933,6 @@ async function pushOn(){
   if(PUSH.busy)return;
   PUSH.busy=true;PUSH.err='';
   try{
-    if(!getPass())throw new Error(L('Сначала введите код доступа выше и нажмите «Сохранить».','Enter the access code above and tap Save first.'));
     const perm=await Notification.requestPermission(); // вызывается прямо из касания, иначе iPhone откажет
     PUSH.perm=perm;
     if(perm!=='granted')throw new Error(L('Разрешение не выдано. Разрешите уведомления для Crumb в настройках iPhone.','Permission wasn’t granted. Allow notifications for Crumb in iPhone Settings.'));
@@ -960,6 +960,7 @@ async function pushTest(){
     else toast(L('Сервис уведомлений ответил ошибкой ','The push service returned an error ')+j.results.map(x=>x.status).join(','));
   }catch(e){toast(L('Не получилось отправить тест','Couldn’t send the test'))}
 }
+const dietLabels=()=>{const p=S.profile;return p&&p.diet&&p.diet.length&&!p.diet.includes('none')?labs('diet',p.diet):''};
 const ctxLine=()=>{const p=S.profile;return p&&p.diet&&p.diet.length&&!p.diet.includes('none')?`\nUser dietary restrictions: ${labs('diet',p.diet)}.`:''};
 async function askFood(kind){
   sh.busy=true;sh.err='';paintSheet();startTicker();
@@ -967,10 +968,9 @@ async function askFood(kind){
     let raw;
     if(!SAMPLE&&BACKEND){
       const ctl=sh.ctl=new AbortController();
-      if(kind==='photo'){
-        const blob=await prepImage(sh.file);
-        raw=parseJSON(await gem({system:foodRules()+ctxLine(),messages:[{role:'user',text:'The photo shows a meal or a food product. Identify it and estimate portions from the size of the plate and cutlery, or from the package.'+(sh.note&&sh.note.trim()?'\nUser note: "'+sh.note.trim()+'"':'')}],image:blob,json:true,maxTokens:2500,signal:ctl.signal}));
-      }else raw=parseJSON(await gem({system:foodRules()+ctxLine(),messages:[{role:'user',text:'Description: "'+sh.text.trim()+'"'}],json:true,maxTokens:2500,signal:ctl.signal}));
+      const diet=dietLabels();
+      const body=kind==='photo'?{task:'food',lang:S.lang,diet,note:(sh.note||'').trim(),image:await imgPayload(sh.file)}:{task:'food',lang:S.lang,diet,text:sh.text.trim()};
+      raw=parseJSON(await aiCall(body,{signal:ctl.signal}));
     }
     else if(!SAMPLE){await sleep(1700);raw=mockFood(sh.text);sh.demo=true}
     else{
@@ -996,7 +996,7 @@ async function askFix(text){
     let raw;
     if(!SAMPLE&&BACKEND){
       const cur={title:sh.draft.title,items:sh.draft.items.map(i=>({name:i.name,grams:Math.round(i.grams*i.s),kcal:Math.round(i.kcal*i.s),p:i.p*i.s,f:i.f*i.s,c:i.c*i.s,sugar:i.sugar*i.s,fiber:i.fiber*i.s}))};
-      raw=parseJSON(await gem({system:foodRules()+ctxLine(),messages:[{role:'user',text:'Previous estimate (JSON):\n'+JSON.stringify(cur)+'\nThe user corrects it: "'+text.trim()+'"\nUpdate the estimate with the correction and return JSON in the same format. If the correction answers a question, drop that question.'}],json:true,maxTokens:2500}));
+      raw=parseJSON(await aiCall({task:'food',lang:S.lang,diet:dietLabels(),previous:cur,fix:text.trim()}));
     }
     else if(!SAMPLE){await sleep(1200);raw=mockFood(text);sh.demo=true}
     else{
@@ -1118,7 +1118,7 @@ const vWelcome=()=>`<div class="welcome stag">
   <li><span class="bi">${ico('cookie',18)}</span><span>${L('<b>Перекусы на виду.</b> Видно, сколько калорий дают мелочи за день и за неделю.','<b>Snacks in plain sight.</b> See how many calories the small stuff adds per day and per week.')}</span></li>
   <li><span class="bi">${ico('target',18)}</span><span>${L('<b>План под вас.</b> Калории, белок и вода по 11 вопросам, с безопасным темпом.','<b>A plan built for you.</b> Calories, protein and water from 11 questions, at a safe pace.')}</span></li>
  </ul>
- <div style="--i:4;margin-top:auto;display:flex;flex-direction:column;gap:10px">${BACKEND?`<div class="fix"><input id="passIn" type="password" autocomplete="off" value="${esc(getPass())}" placeholder="${L('Код доступа (если вам его дали)','Access code (if you were given one)')}" aria-label="${L('Код доступа','Access code')}"><button class="btn sm" data-act="savePass">${L('Войти','Enter')}</button></div>`:''}<button class="btn" data-act="obStart">${L('Составить мой план','Build my plan')}</button><button class="btn ghost" data-act="obDemo">${L('Посмотреть пример с данными','See an example with data')}</button><p class="sub" style="font-size:12.5px;text-align:center">${L('Концепт-версия. Данные видны только вам.','Concept build. Your data is visible only to you.')}</p></div></div>`;
+ <div style="--i:4;margin-top:auto;display:flex;flex-direction:column;gap:10px">${BACKEND?`<div class="fix"><input id="passIn" type="password" autocomplete="off" value="${esc(getPass())}" placeholder="${L('Личный код (необязательно)','Personal code (optional)')}" aria-label="${L('Код доступа','Access code')}"><button class="btn sm" data-act="savePass">${L('Войти','Enter')}</button></div>`:''}<button class="btn" data-act="obStart">${L('Составить мой план','Build my plan')}</button><button class="btn ghost" data-act="obDemo">${L('Посмотреть пример с данными','See an example with data')}</button><p class="sub" style="font-size:12.5px;text-align:center">${L('Данные хранятся на вашем устройстве. Для оценки еды фото и текст отправляются в Google Gemini.','Your data stays on your device. For food estimates, photos and text are sent to Google Gemini.')}</p></div></div>`;
 const AN=[['Считаю базовый обмен веществ','Calculating your base metabolism'],['Учитываю работу, тренировки и сон','Factoring in work, workouts and sleep'],['Подбираю безопасный темп к цели','Choosing a safe pace to your goal'],['Раскладываю калории по приёмам и перекусам','Splitting calories across meals and snacks'],['Считаю норму воды','Calculating your water target']];
 const vAnalysis=()=>`<div class="an"><div>${logo(44)}</div><div><h2 class="h1">${L('Собираю ваш план','Building your plan')}</h2><p class="sub" style="margin-top:6px">${L('Это займёт несколько секунд.','This takes a few seconds.')}</p></div><div class="an-list">${AN.map((t,i)=>`<div class="an-item" id="an${i}"><span class="an-dot">${ico('check',13)}</span><span>${T(t)}</span></div>`).join('')}</div></div>`;
 async function runAnalysis(){
@@ -1308,9 +1308,12 @@ function vCoach(){
   <div class="chiprow" style="padding-bottom:4px">${SUGG.map(s=>`<button class="chip sm" data-act="sugg" data-t="${esc(T(s))}">${esc(T(s))}</button>`).join('')}</div>
   <form class="composer" data-act-submit="send"><textarea id="coachIn" rows="1" placeholder="${L('Напишите вопрос','Type a question')}" aria-label="${L('Вопрос коучу','Question for the coach')}" data-in="coach"></textarea><button class="send" type="submit" aria-label="${L('Отправить','Send')}">${ico('send',20)}</button></form>`;
 }
-function coachCtx(){
+function coachData(){
   const P=S.plan,p=S.profile,k=todayKey(),t=totals(k),ents=((S.log[k]||{}).entries||[]).map(e=>`${e.t} ${e.title} ${Math.round(e.kcal)} kcal`).join('; ')||'no entries yet';
-  return`You are a strict but fair nutrition coach inside the Crumb app. Be direct and blunt: no flattery, no filler, no emojis. Short sentences and concrete actions with numbers (grams, kcal, minutes). Hold the user accountable to their plan. Never shame their body or weight. Never suggest fasting, skipping meals, purging, laxatives, or eating below their calorie floor. For medical questions or signs of an eating disorder, tell them to see a doctor. Answer in at most 5 sentences. Reply in ${en()?'English':'Russian'}. User data: goal - ${lab('goal',p.goal)}, ${p.sex==='m'?'male':'female'}, ${p.age} years, ${p.h} cm, ${p.w} kg, target ${p.tw} kg. Strongest hunger: ${lab('hunger',p.hunger)}. Snack habits: ${labs('snacks',p.snacks)||'none'}. Restrictions: ${labs('diet',p.diet)||'none'}. Daily target: ${P.kcal} kcal, protein ${P.p} g, fat ${P.f} g, carbs ${P.c} g, water ${P.water} ml. Today eaten ${Math.round(t.kcal)} kcal, protein ${Math.round(t.p)} g, water ${(S.log[k]||{}).water||0} ml. Entries: ${ents}. Time now ${nowT()}.`;
+  return`goal - ${lab('goal',p.goal)}, ${p.sex==='m'?'male':'female'}, ${p.age} years, ${p.h} cm, ${p.w} kg, target ${p.tw} kg. Strongest hunger: ${lab('hunger',p.hunger)}. Snack habits: ${labs('snacks',p.snacks)||'none'}. Restrictions: ${labs('diet',p.diet)||'none'}. Daily target: ${P.kcal} kcal, protein ${P.p} g, fat ${P.f} g, carbs ${P.c} g, water ${P.water} ml. Today eaten ${Math.round(t.kcal)} kcal, protein ${Math.round(t.p)} g, water ${(S.log[k]||{}).water||0} ml. Entries: ${ents}. Time now ${nowT()}.`;
+}
+function coachCtx(){
+  return`You are a strict but fair nutrition coach inside the Crumb app. Be direct and blunt: no flattery, no filler, no emojis. Short sentences and concrete actions with numbers (grams, kcal, minutes). Hold the user accountable to their plan. Never shame their body or weight. Never suggest fasting, skipping meals, purging, laxatives, or eating below their calorie floor. For medical questions or signs of an eating disorder, tell them to see a doctor. Answer in at most 5 sentences. Reply in ${en()?'English':'Russian'}. User data: `+coachData();
 }
 let coachCtl=null,coachBusy=false;
 async function sendCoach(text){
@@ -1326,7 +1329,7 @@ async function sendCoach(text){
     if(!SAMPLE&&BACKEND){
       const msgs=[];S.chat.slice(-9).forEach(m=>{const role=m.r==='u'?'user':'model';if(msgs.length&&msgs[msgs.length-1].role===role)msgs[msgs.length-1].text+='\n'+m.c;else msgs.push({role,text:m.c})});
       while(msgs.length&&msgs[0].role!=='user')msgs.shift();
-      ans=await gemStream({system:coachCtx(),messages:msgs,maxTokens:1024,onText:t=>{b.innerHTML=fmtMsg(t);box.scrollTop=box.scrollHeight}});
+      ans=await aiStream({task:'coach',lang:S.lang,ctx:coachData(),messages:msgs.map(m=>({role:m.role,text:m.text})),stream:true},{onText:t=>{b.innerHTML=fmtMsg(t);box.scrollTop=box.scrollHeight}});
       b.innerHTML=fmtMsg(ans);
     }else if(!SAMPLE){
       await sleep(900);const tip=tipFor(todayKey()),left=S.plan.kcal-totals(todayKey()).kcal;
@@ -1361,15 +1364,15 @@ function remindersBlock(sw){
   if(!PUSH.sub)return `<button class="btn" style="margin-top:12px" data-act="pushOn" ${PUSH.busy?'disabled':''}>${L('Включить уведомления','Turn on notifications')}</button>${PUSH.err?`<div class="err" style="margin-top:10px">${esc(PUSH.err)}</div>`:''}${note(L('Напомним про воду, вечерние перекусы и взвешивание по времени вашего часового пояса.','We’ll remind you about water, evening snacks and weigh-ins on your own time zone.'))}`;
   return sws+`<div class="row" style="margin-top:12px;flex-wrap:wrap"><button class="mini" data-act="pushTest">${L('Отправить тест','Send a test')}</button><button class="mini danger" data-act="pushOff">${L('Выключить','Turn off')}</button></div>`;
 }
-const BUILD='2026-10-26.2';
+const BUILD='2026-10-26.3';
 function vProfile(ani){
   const p=S.profile,P=S.plan,u=U();
   const kv=(a,b)=>`<div class="kv"><span>${a}</span><b>${b}</b></div>`;
   const sw=(k,t,s)=>`<button class="switch ${S.rem[k]?'on':''}" data-act="rem" data-k="${k}"><span><b style="font-weight:700">${t}</b><br><small class="muted">${s}</small></span><span class="sw"></span></button>`;
   const syncTxt=syncOn?L(`Облачная синхронизация включена. Данные доступны на всех ваших устройствах${syncAt?' · '+new Date(syncAt).toLocaleTimeString(loc(),{hour:'2-digit',minute:'2-digit'}):''}.`,`Cloud sync is on. Your data follows you across devices${syncAt?' · '+new Date(syncAt).toLocaleTimeString(loc(),{hour:'2-digit',minute:'2-digit'}):''}.`):L('Синхронизация недоступна в этом окне, данные хранятся только на этом устройстве.','Sync isn’t available in this window, data stays on this device only.');
-  const aiTxt=SAMPLE?L('ИИ: Claude (прототип внутри claude.ai).','AI: Claude (prototype inside claude.ai).'):BACKEND?L('ИИ: Gemini через ваш сервер. Введите код доступа один раз на этом устройстве.','AI: Gemini through your server. Enter the access code once on this device.'):L('ИИ: примеры ответов, сервер Gemini не подключён.','AI: sample replies, the Gemini server isn’t connected.');
+  const aiTxt=SAMPLE?L('ИИ: Claude (прототип внутри claude.ai).','AI: Claude (prototype inside claude.ai).'):BACKEND?L('ИИ: Gemini, работает сразу, код не нужен. Личный код нужен только для синхронизации между устройствами и большего лимита.','AI: Gemini, works right away, no code needed. A personal code is only for syncing between devices and a higher limit.'):L('ИИ: примеры ответов, сервер Gemini не подключён.','AI: sample replies, the Gemini server isn’t connected.');
   const testBlock=BACKEND?`<button class="btn ghost sm" style="margin-top:12px;width:100%" data-act="aiTest">${L('Проверить ИИ','Test the AI')}</button><pre id="aiTestOut" class="aitest"></pre>`:'';
-  const passBlock=BACKEND?`<div class="fix" style="margin-top:12px"><input id="passIn" type="password" autocomplete="off" value="${esc(getPass())}" placeholder="${L('Код доступа','Access code')}" aria-label="${L('Код доступа к ИИ','AI access code')}"><button class="btn sm" data-act="savePass">${L('Сохранить','Save')}</button></div>`:'';
+  const passBlock=BACKEND?`<div class="fix" style="margin-top:12px"><input id="passIn" type="password" autocomplete="off" value="${esc(getPass())}" placeholder="${L('Личный код (необязательно)','Personal code (optional)')}" aria-label="${L('Личный код','Personal code')}"><button class="btn sm" data-act="savePass">${L('Сохранить','Save')}</button></div>`:'';
   return`<div class="top"><div><span class="eyebrow">${L('Аккаунт','Account')}</span><h1 class="h1">${L('Профиль','Profile')}</h1></div></div>
   <div class="stack ${ani?'stag':''}">
   ${S.demo?`<div class="note warn" style="--i:0">${ico('info',18)}<span>${L('Сейчас загружены демо-данные: 4 недели записей и веса. Очистите их, чтобы начать с нуля.','Demo data is loaded: 4 weeks of entries and weights. Clear it to start from scratch.')}</span></div>`:''}
@@ -1416,7 +1419,7 @@ function paintSheet(){
   else if(v==='weight'){Tt.textContent=L('Записать вес','Log weight');B.innerHTML=weightBody();F.innerHTML=`<button class="btn" data-act="saveWeight">${L('Сохранить','Save')}</button>`;$$('input[type=range]',B).forEach(syncRange)}
 }
 function addBody(){
-  const tabs=`<div class="seg">${[['photo',L('Фото','Photo')],['text',L('Описать','Describe')],['quick',L('Быстро','Quick')]].map(t=>`<button class="${sh.tab===t[0]?'on':''}" data-act="shTab" data-tab="${t[0]}">${t[1]}</button>`).join('')}</div>`;
+  const tabs=`<div class="seg">${[['photo',L('Фото','Photo')],['text',L('Описать','Describe')],['quick',L('Быстро','Quick')]].map(t=>`<button class="${sh.tab===t[0]?'on':''}" data-act="shTab" data-tab="${t[0]}">${t[1]}</button>`).join('')}</div>`+(BACKEND&&sh.tab!=='quick'?`<p class="sub" style="font-size:12.5px">${L('Оценку делает Google Gemini: фото и текст отправляются туда.','Estimates are made by Google Gemini: photos and text are sent there.')}</p>`:'');
   const err=sh.err?`<div class="err">${esc(sh.err)}</div>`:'';
   if(sh.busy){
     return tabs+(sh.tab==='photo'&&sh.url?`<div class="prev scan"><img src="${sh.url}" alt=""></div>`:`<div class="card soft stack"><div class="shimmer" style="width:70%"></div><div class="shimmer" style="width:90%"></div><div class="shimmer" style="width:55%"></div></div>`)+`<div class="status">${ico('spark',20)}<span id="tick">${T(TICKS[0])}</span></div>`;

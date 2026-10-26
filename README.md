@@ -51,7 +51,7 @@ cd app && python3 -m http.server 8000
 2. Отправляем в `main`.
 3. Через 1–2 минуты обновлённая версия на адресе `workers.dev`. На телефоне достаточно закрыть и снова открыть приложение.
 
-Секреты (`GEMINI_API_KEY`, `APP_PASSCODE`) меняются только в панели Cloudflare: Workers & Pages → crumby → Settings → Variables and secrets. В репозитории их нет и быть не должно.
+Секреты (`GEMINI_API_KEY`, а также необязательные `APP_PASSCODE`, `APP_PASSCODES`) меняются только в панели Cloudflare: Workers & Pages → crumby → Settings → Variables and secrets. В репозитории их нет и быть не должно.
 
 Репозиторий `webnetdsgn/crumb` остался от первой версии и больше не используется.
 
