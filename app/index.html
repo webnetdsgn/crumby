@@ -1491,7 +1491,7 @@ function remindersBlock(sw){
   return sws+`<div class="row" style="margin-top:12px;flex-wrap:wrap"><button class="mini" data-act="pushTest">${L('Отправить тест','Send a test')}</button><button class="mini danger" data-act="pushOff">${L('Выключить','Turn off')}</button></div>`;
 }
 window.addEventListener('resize',()=>{placeTabPill(true);if(nav.tab==='home')placeDayPill()});
-const BUILD='2026-10-26.7';
+const BUILD='2026-10-26.8';
 function acctCard(kv,syncTxt){
   if(!BACKEND)return'';
   const row='<div class="row" style="margin-top:12px;gap:8px;flex-wrap:wrap">';
@@ -1558,9 +1558,16 @@ async function authApi(name,body,method='POST'){
   let r,j={};
   try{r=await fetch('/api/auth/'+name,{method,headers:authHeaders(),body:method==='GET'?undefined:JSON.stringify(body||{})});try{j=await r.json()}catch(e){}}
   catch(e){throw{code:'network'}}
-  if(!r.ok)throw{code:j.error||'upstream_error',retryMin:j.retryMin,status:r.status};
+  if(!r.ok)throw{code:j.error||'upstream_error',retryMin:j.retryMin,status:r.status,reason:j.reason,n:j.n};
   return j;
 }
+const weakMsg=e=>{const n=e&&e.n;return({
+  short:L(`Пароль короткий: нужно от 8 знаков${n!=null?` (сейчас ${n})`:''}.`,`The password is too short: 8+ characters needed${n!=null?` (now ${n})`:''}.`),
+  long:L('Пароль слишком длинный: до 128 знаков.','The password is too long: up to 128 characters.'),
+  common:L('Этот пароль слишком популярный. Придумайте другой.','That password is too common. Pick another one.'),
+  same:L('Пароль не должен совпадать с логином.','The password must not match the login.'),
+  repeat:L('Пароль не должен состоять из одного и того же знака.','The password must not be one repeated character.')
+})[e&&e.reason]||L('Пароль не подходит. Нужно от 8 знаков, и не из самых популярных.','The password doesn’t qualify: 8+ characters and not a common one.')};
 const authMsg=e=>{const m=e&&e.retryMin||15;return({
   bad_credentials:L('Неверный логин или пароль.','Wrong login or password.'),
   bad_recovery:L('Код восстановления не подошёл.','That recovery code doesn’t match.'),
@@ -1569,13 +1576,20 @@ const authMsg=e=>{const m=e&&e.retryMin||15;return({
   limit_register:L('С этого адреса сегодня создано много аккаунтов. Попробуйте завтра.','Too many accounts were created from this address today. Try tomorrow.'),
   login_taken:L('Этот логин занят. Выберите другой.','That login is taken. Pick another one.'),
   login_invalid:L('Логин: 3–32 знака, латиница, цифры, точка, дефис или подчёркивание.','Login: 3–32 characters, Latin letters, digits, dot, dash or underscore.'),
-  password_weak:L('Пароль слишком простой: нужно от 8 знаков, и не из самых популярных.','The password is too weak: 8+ characters and not a common one.'),
+  password_weak:weakMsg(e),
   closed:L('Регистрация временно закрыта.','Sign-ups are closed for now.'),
   bad_token:L('Сессия истекла. Войдите снова.','Session expired. Sign in again.'),
   network:L('Нет связи с сервером. Проверьте интернет.','No connection to the server. Check your internet.'),
   storage:L('Сервер временно недоступен. Попробуйте ещё раз.','The server is temporarily unavailable. Try again.')
 })[e&&e.code]||L('Не получилось. Попробуйте ещё раз.','Something went wrong. Try again.')};
 const acctMsg=e=>e&&e.code==='bad_credentials'?L('Неверный пароль.','Wrong password.'):authMsg(e);
+const fv=(id,key)=>{const el=document.getElementById(id);return el?el.value:(sh&&sh[key])||''};
+const pwCount=n=>n>=8?L(`Длина пароля: ${n} ✓`,`Password length: ${n} ✓`):L(`Длина пароля: ${n} (нужно от 8)`,`Password length: ${n} (8 needed)`);
+function fieldIn(k,v){
+  if(!sh)return;sh[k]=v;
+  const er=$('#authErr');if(er)er.hidden=true;
+  const c=$('#pwCnt');if(c&&((k==='pw'&&sh.mode==='register')||k==='np'))c.textContent=pwCount(v.length);
+}
 function authErr(m){const el=$('#authErr');if(!el)return;el.textContent=m;el.hidden=false}
 function authBusy(b){if(sh)sh.busy=b;const g=$('#authGo');if(g){g.disabled=b;g.textContent=b?L('Подождите…','Please wait…'):g.dataset.label}}
 function openAuth(mode){openSheet({view:'auth',mode,lg:'',pw:'',show:false});setTimeout(()=>{const i=$('#lgIn');if(i)i.focus()},380)}
@@ -1591,7 +1605,7 @@ function authBody(){
    <button type="submit" class="sr" tabindex="-1" aria-hidden="true"></button>
   </form>
   <div class="err" id="authErr" hidden></div>
-  ${reg?`<p class="sub" style="font-size:12.5px">${L('Логин: латиница, цифры, . - _ (3–32 знака). Пароль: от 8 знаков. Почты пока нет, поэтому дальше вы получите код восстановления: сохраните его.','Login: Latin letters, digits, . - _ (3–32). Password: 8+ characters. There’s no email yet, so next you’ll get a recovery code: save it.')}</p>`:`<button type="button" class="linkbtn" data-act="authReset">${L('Забыли пароль?','Forgot your password?')}</button>`}`;
+  ${reg?`<p class="sub" id="pwCnt" style="font-size:12.5px">${pwCount((sh.pw||'').length)}</p><p class="sub" style="font-size:12.5px">${L('Логин: латиница, цифры, . - _ (3–32 знака). Пароль: от 8 знаков. Почты пока нет, поэтому дальше вы получите код восстановления: сохраните его.','Login: Latin letters, digits, . - _ (3–32). Password: 8+ characters. There’s no email yet, so next you’ll get a recovery code: save it.')}</p>`:`<button type="button" class="linkbtn" data-act="authReset">${L('Забыли пароль?','Forgot your password?')}</button>`}`;
 }
 function resetBody(){
   return`<p class="sub" style="font-size:14px">${L('Введите логин, код восстановления, который вы сохранили при регистрации, и новый пароль.','Enter your login, the recovery code you saved at sign-up, and a new password.')}</p>
@@ -1601,6 +1615,7 @@ function resetBody(){
    ${field('npIn','np',L('Новый пароль','New password'),{type:'password',ac:'new-password'})}
    <button type="submit" class="sr" tabindex="-1" aria-hidden="true"></button>
   </form>
+  <p class="sub" id="pwCnt" style="font-size:12.5px">${pwCount((sh.np||'').length)}</p>
   <div class="err" id="authErr" hidden></div>
   <button type="button" class="linkbtn" data-act="authMode" data-mode="login">${L('Назад ко входу','Back to sign in')}</button>`;
 }
@@ -1641,10 +1656,11 @@ async function authSubmit(){
   if(!sh||sh.busy)return;
   if(sh.view==='acct'){const f={pass:acctPass,rec:acctRec,del:acctDel}[sh.sub];if(f)f();return}
   if(sh.view==='reset')return doReset();
-  const reg=sh.mode==='register',lg=(sh.lg||'').trim(),pw=sh.pw||'';
+  const reg=sh.mode==='register',lg=fv('lgIn','lg').trim(),pw=fv('pwIn','pw');
+  sh.lg=lg;sh.pw=pw;
   if(!lg||!pw)return authErr(L('Введите логин и пароль.','Enter a login and password.'));
   if(reg&&!/^[A-Za-z0-9._-]{3,32}$/.test(lg))return authErr(authMsg({code:'login_invalid'}));
-  if(reg&&pw.length<8)return authErr(authMsg({code:'password_weak'}));
+  if(reg&&pw.length<8)return authErr(authMsg({code:'password_weak',reason:'short',n:pw.length}));
   const mine=sh;authBusy(true);
   try{
     const j=await authApi(reg?'register':'login',{login:lg,password:pw});
@@ -1655,9 +1671,9 @@ async function authSubmit(){
   finally{if(sh===mine&&sh.view==='auth')authBusy(false)}
 }
 async function doReset(){
-  const lg=(sh.lg||'').trim(),rc=(sh.rc||'').trim(),np=sh.np||'';
+  const lg=fv('lgIn','lg').trim(),rc=fv('rcIn','rc').trim(),np=fv('npIn','np');
   if(!lg||!rc||!np)return authErr(L('Заполните все поля.','Fill in all fields.'));
-  if(np.length<8)return authErr(authMsg({code:'password_weak'}));
+  if(np.length<8)return authErr(authMsg({code:'password_weak',reason:'short',n:np.length}));
   const mine=sh;authBusy(true);
   try{
     const j=await authApi('reset',{login:lg,recovery:rc,password:np});
@@ -1683,20 +1699,20 @@ async function mergeAfterLogin(j,noSheet){
   if(S.onboarded&&!sh)renderMain({keep:true});
 }
 async function acctPass(){
-  const cp=sh.cp||'',np=sh.np||'';if(!cp||!np)return authErr(L('Заполните оба поля.','Fill in both fields.'));
-  if(np.length<8)return authErr(authMsg({code:'password_weak'}));
+  const cp=fv('cpIn','cp'),np=fv('npIn','np');if(!cp||!np)return authErr(L('Заполните оба поля.','Fill in both fields.'));
+  if(np.length<8)return authErr(authMsg({code:'password_weak',reason:'short',n:np.length}));
   const mine=sh;authBusy(true);
   try{await authApi('password',{current:cp,next:np});toast(L('Пароль изменён','Password changed'));Object.assign(sh,{sub:null,cp:'',np:''});paintSheet()}
   catch(e){if(sh===mine)authErr(acctMsg(e))}finally{if(sh===mine)authBusy(false)}
 }
 async function acctRec(){
-  const cp=sh.cp||'';if(!cp)return authErr(L('Введите пароль.','Enter your password.'));
+  const cp=fv('cpIn','cp');if(!cp)return authErr(L('Введите пароль.','Enter your password.'));
   const mine=sh;authBusy(true);
   try{const j=await authApi('recovery',{password:cp});sh.cp='';showRecovery(j.recovery,null)}
   catch(e){if(sh===mine)authErr(acctMsg(e))}finally{if(sh===mine)authBusy(false)}
 }
 async function acctDel(){
-  const cp=sh.cp||'';if(!cp)return authErr(L('Введите пароль.','Enter your password.'));
+  const cp=fv('cpIn','cp');if(!cp)return authErr(L('Введите пароль.','Enter your password.'));
   const mine=sh;authBusy(true);
   try{
     await authApi('delete',{password:cp});
@@ -1897,11 +1913,13 @@ document.addEventListener('input',e=>{
   else if(k==='pnote'){sh.note=t.value}
   else if(k==='title'){sh.draft.title=t.value}
   else if(k==='time'){sh.draft.t=t.value}
-  else if(k==='lg'||k==='pw'||k==='rc'||k==='np'||k==='cp'){if(sh){sh[k]=t.value;const er=$('#authErr');if(er)er.hidden=true}}
+  else if(k==='lg'||k==='pw'||k==='rc'||k==='np'||k==='cp'){fieldIn(k,t.value)}
   else if(k==='coach'){t.style.height='auto';t.style.height=Math.min(110,t.scrollHeight)+'px'}
 });
 document.addEventListener('change',e=>{
-  const t=e.target;if(!t.dataset||t.dataset.in!=='file')return;
+  const t=e.target,k=t.dataset&&t.dataset.in;
+  if(k==='lg'||k==='pw'||k==='rc'||k==='np'||k==='cp'){fieldIn(k,t.value);return} // автозаполнение иногда шлёт только change
+  if(!t.dataset||t.dataset.in!=='file')return;
   const f=t.files&&t.files[0];if(!f||!sh)return;
   if(sh.url)URL.revokeObjectURL(sh.url);
   sh.file=f;sh.url=URL.createObjectURL(f);sh.err='';paintSheet();

@@ -66,11 +66,15 @@ function newRecovery() {
   const b = crypto.getRandomValues(new Uint8Array(16)); // 256 делится на 32, перекоса нет
   return [...b].map((x) => RC_ALPHA[x % 32]).join('').match(/.{4}/g).join('-');
 }
+// Возвращает причину отказа ('short' | 'long' | 'common' | 'same' | 'repeat') или null, если пароль годится.
 export function passwordProblem(pw, login) {
   const p = String(pw == null ? '' : pw);
-  if (p.length < 8 || p.length > 128) return 'password_weak';
+  if (p.length < 8) return 'short';
+  if (p.length > 128) return 'long';
   const low = p.toLowerCase();
-  if (COMMON_PW.has(low) || low === String(login || '').toLowerCase() || /^(.)\1+$/.test(p)) return 'password_weak';
+  if (low === String(login || '').toLowerCase()) return 'same';
+  if (/^(.)\1+$/.test(p)) return 'repeat';
+  if (COMMON_PW.has(low)) return 'common';
   return null;
 }
 async function pbkdf2Hex(password, saltHex, iter) {
@@ -721,7 +725,8 @@ export class HubCore {
   async op_register({ login, password, ip, maxAccounts, perIp }) {
     const lg = String(login || '').trim(), lc = lg.toLowerCase();
     if (!LOGIN_RE.test(lg)) return { error: 'login_invalid' };
-    if (passwordProblem(password, lc)) return { error: 'password_weak' };
+    const pe = passwordProblem(password, lc);
+    if (pe) return { error: 'password_weak', reason: pe, n: String(password || '').length };
     const rk = ip ? `r:${ip}:${this.day()}` : null;
     if (rk && Number((await this.store.get(rk)) || 0) >= (perIp || 5)) return { error: 'limit_register' };
     const total = Number((await this.store.get('meta:accounts')) || 0);
@@ -776,7 +781,8 @@ export class HubCore {
     const { lc } = await this.accountByUid(uid);
     const r = await this.checkLogin(lc, String(current || ''), ip);
     if (r.error) return r;
-    if (passwordProblem(next, lc)) return { error: 'password_weak' };
+    const pe = passwordProblem(next, lc);
+    if (pe) return { error: 'password_weak', reason: pe, n: String(next || '').length };
     const acc = r.acc, salt = randHex(16);
     acc.salt = salt; acc.hash = await pbkdf2Hex(next, salt, PBKDF2_ITER); acc.iter = PBKDF2_ITER;
     await this.store.put('a:' + lc, JSON.stringify(acc));
@@ -808,7 +814,8 @@ export class HubCore {
       if (ipk) await this.store.put(ipk, String(Number((await this.store.get(ipk)) || 0) + 1));
       return { error: 'bad_recovery' };
     }
-    if (passwordProblem(password, lc)) return { error: 'password_weak' };
+    const pe = passwordProblem(password, lc);
+    if (pe) return { error: 'password_weak', reason: pe, n: String(password || '').length };
     const salt = randHex(16), { code, rec } = await this.makeRecovery();
     acc.salt = salt; acc.hash = await pbkdf2Hex(password, salt, PBKDF2_ITER); acc.iter = PBKDF2_ITER; acc.rec = rec;
     await this.store.put('a:' + lc, JSON.stringify(acc));
