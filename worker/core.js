@@ -80,11 +80,18 @@ export async function userOf(req, env) {
 
 /* ---------------- обращение к хранилищу (Durable Object) ---------------- */
 
-async function hub(env, op, body = {}) {
-  const stub = env.HUB.get(env.HUB.idFromName('main'));
-  const r = await stub.fetch('https://hub/' + op, { method: 'POST', body: JSON.stringify(body) });
-  if (!r.ok) throw new Error('hub ' + op + ' ' + r.status);
-  return r.json();
+async function hub(env, op, body = {}, timeoutMs = 0) {
+  const call = (async () => {
+    const stub = env.HUB.get(env.HUB.idFromName('main'));
+    const r = await stub.fetch('https://hub/' + op, { method: 'POST', body: JSON.stringify(body) });
+    if (!r.ok) throw new Error('hub ' + op + ' ' + r.status);
+    return r.json();
+  })();
+  if (!timeoutMs) return call;
+  call.catch(() => {}); // если хранилище ответит после таймаута, это уже никому не нужно
+  let timer;
+  const cut = new Promise((_, rej) => { timer = setTimeout(() => rej(new Error('hub timeout')), timeoutMs); });
+  try { return await Promise.race([call, cut]); } finally { clearTimeout(timer); }
 }
 
 const PUSH_HOST = /(^|\.)push\.apple\.com$|(^|\.)googleapis\.com$|(^|\.)push\.services\.mozilla\.com$|(^|\.)notify\.windows\.com$/;
@@ -103,9 +110,9 @@ async function quota(env, req, who) {
     global: open ? num(env.AI_GLOBAL_LIMIT, 800) : 0,
   };
   try {
-    const r = await hub(env, 'use', { uid: who.uid, ip: open ? await ipOf(req) : '', limits });
+    const r = await hub(env, 'use', { uid: who.uid, ip: open ? await ipOf(req) : '', limits }, 2500);
     if (!r.ok) return json({ error: r.reason, limit: r.limit }, 429);
-  } catch { /* хранилище недоступно: не блокируем ИИ */ }
+  } catch { /* хранилище недоступно или отвечает слишком долго: не блокируем ИИ */ }
   return null;
 }
 
@@ -263,9 +270,10 @@ async function aiTask(req, env, who) {
   try { b = await req.json(); } catch { return json({ error: 'bad_json' }, 400); }
   const spec = specFor(b || {});
   if (!spec) return json({ error: 'bad_request' }, 400);
+  const tq = Date.now();
   const denied = await quota(env, req, who);
   if (denied) return denied;
-  return callModel(env, spec);
+  return callModel(env, spec, Date.now() - tq);
 }
 
 async function rawGemini(req, env, who) {
@@ -307,7 +315,7 @@ async function callGemini(env, model, body, stream, limitThinking) {
   }
 }
 
-async function callModel(env, spec) {
+async function callModel(env, spec, quotaMs = 0) {
   const contents = (spec.messages || [])
     .map((m) => ({ role: m.role === 'model' ? 'model' : 'user', parts: [{ text: String(m.text || '') }] }))
     .filter((c) => c.parts[0].text);
@@ -352,10 +360,13 @@ async function callModel(env, spec) {
     return json({ error: 'upstream', status: r.status, detail }, 502);
   }
 
+  // сколько ушло на проверку лимита (q) и на ожидание ответа Gemini (up), в миллисекундах: видно в самопроверке приложения
+  const timing = `q=${quotaMs},up=${Date.now() - t0}`;
+
   if (stream) {
     return new Response(r.body, {
       status: 200,
-      headers: { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-store' },
+      headers: { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-store', 'x-crumb-ms': timing },
     });
   }
 
@@ -365,7 +376,9 @@ async function callModel(env, spec) {
   if (!text) {
     return json({ error: 'empty', blocked: (d && d.promptFeedback && d.promptFeedback.blockReason) || null, finish: (d && d.candidates && d.candidates[0] && d.candidates[0].finishReason) || null }, 502);
   }
-  return json({ text, model, ms: Date.now() - t0, usage: (d && d.usageMetadata) || null });
+  const out = json({ text, model, ms: Date.now() - t0, usage: (d && d.usageMetadata) || null });
+  out.headers.set('x-crumb-ms', timing);
+  return out;
 }
 
 /* ---------------- push: подпись VAPID и отправка ---------------- */

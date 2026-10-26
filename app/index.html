@@ -845,14 +845,19 @@ async function aiCall(body,{signal,timeoutMs=45000}={}){
   return j.text;
 }
 // Ответ приходит кусками: текст появляется сразу, а не после полной генерации.
-async function aiStream(body,{onText,timeoutMs=60000}={}){
-  const t0=performance.now();let first=0,full='';
+let AISTAT=null;
+const statText=s=>s?'first '+(s.first||'-')+' ms, total '+s.total+' ms'+(s.srv?', server '+s.srv:'')+(s.status?', HTTP '+s.status:''):'';
+// firstMs: если за это время не пришло ни слова, запрос обрывается с кодом timeout (вызывающий может повторить иначе).
+async function aiStream(body,{onText,timeoutMs=40000,firstMs=0}={}){
+  const t0=performance.now();let first=0,full='',srv='',status=0;
   const ctl=new AbortController();let timedOut=false;
   const tm=setTimeout(()=>{timedOut=true;ctl.abort()},timeoutMs);
+  const ft=firstMs?setTimeout(()=>{if(!first){timedOut=true;ctl.abort()}},firstMs):0;
   try{
     let r;
     try{r=await fetch('/api/ai',{method:'POST',headers:authHeaders(),body:JSON.stringify(body),signal:ctl.signal})}
     catch(e){throw{code:timedOut?'timeout':'upstream_error'}}
+    status=r.status;srv=r.headers.get('x-crumb-ms')||'';
     if(!r.ok){let j={};try{j=await r.json()}catch(e){}throw{code:errCode(r.status,j),detail:errDetail(r.status,j)}}
     const reader=r.body.getReader(),dec=new TextDecoder();let buf='';
     try{
@@ -872,8 +877,11 @@ async function aiStream(body,{onText,timeoutMs=60000}={}){
         }
       }
     }catch(e){throw{code:timedOut?'timeout':'upstream_error',text:full}}
-  }finally{clearTimeout(tm)}
-  AIDBG='ai first '+first+'ms total '+Math.round(performance.now()-t0)+'ms';
+  }finally{
+    clearTimeout(tm);clearTimeout(ft);
+    AISTAT={first,total:Math.round(performance.now()-t0),srv,status};
+  }
+  AIDBG='ai '+statText(AISTAT);
   if(!full.trim())throw{code:'refused'};
   return full;
 }
@@ -887,7 +895,12 @@ async function runAiTest(){
     show();
   };
   await step(L('Сервер','Server'),async()=>{const r=await fetch('/api/health',{cache:'no-store'});const j=await r.json();if(!j.ai)throw{code:'no_key'};return L('сервер и ключ в порядке','server and key are fine')});
-  await step(L('Текст','Text'),async()=>{const t=await aiCall({task:'ping'},{timeoutMs:30000});return t.replace(/\s+/g,' ').slice(0,50)});
+  await step(L('Коуч','Coach'),async()=>{
+    try{
+      await aiStream({task:'coach',lang:S.lang,ctx:coachData(),messages:[{role:'user',text:L('Одним предложением: что мне сделать сейчас?','One sentence: what should I do now?')}],stream:true},{timeoutMs:40000});
+    }catch(e){throw{...e,detail:[e&&e.detail,statText(AISTAT)].filter(Boolean).join(' | ')}}
+    return statText(AISTAT);
+  });
   await step(L('Фото','Photo'),async()=>{
     const c=document.createElement('canvas');c.width=c.height=96;const g=c.getContext('2d');g.fillStyle='#fff';g.fillRect(0,0,96,96);g.fillStyle='#d11';g.beginPath();g.arc(48,48,30,0,7);g.fill();
     const blob=await new Promise(r=>c.toBlob(r,'image/jpeg',.9));
@@ -1329,7 +1342,14 @@ async function sendCoach(text){
     if(!SAMPLE&&BACKEND){
       const msgs=[];S.chat.slice(-9).forEach(m=>{const role=m.r==='u'?'user':'model';if(msgs.length&&msgs[msgs.length-1].role===role)msgs[msgs.length-1].text+='\n'+m.c;else msgs.push({role,text:m.c})});
       while(msgs.length&&msgs[0].role!=='user')msgs.shift();
-      ans=await aiStream({task:'coach',lang:S.lang,ctx:coachData(),messages:msgs.map(m=>({role:m.role,text:m.text})),stream:true},{onText:t=>{b.innerHTML=fmtMsg(t);box.scrollTop=box.scrollHeight}});
+      const req={task:'coach',lang:S.lang,ctx:coachData(),messages:msgs.map(m=>({role:m.role,text:m.text}))};
+      try{
+        ans=await aiStream({...req,stream:true},{onText:t=>{b.innerHTML=fmtMsg(t);box.scrollTop=box.scrollHeight},firstMs:15000});
+      }catch(e){
+        // слов нет за 15 с: возможно, виснет именно потоковая передача, поэтому один раз пробуем обычный запрос
+        if(e&&e.code==='timeout'&&!e.text)ans=await aiCall({...req,stream:false},{timeoutMs:35000});
+        else throw e;
+      }
       b.innerHTML=fmtMsg(ans);
     }else if(!SAMPLE){
       await sleep(900);const tip=tipFor(todayKey()),left=S.plan.kcal-totals(todayKey()).kcal;
@@ -1364,7 +1384,7 @@ function remindersBlock(sw){
   if(!PUSH.sub)return `<button class="btn" style="margin-top:12px" data-act="pushOn" ${PUSH.busy?'disabled':''}>${L('Включить уведомления','Turn on notifications')}</button>${PUSH.err?`<div class="err" style="margin-top:10px">${esc(PUSH.err)}</div>`:''}${note(L('Напомним про воду, вечерние перекусы и взвешивание по времени вашего часового пояса.','We’ll remind you about water, evening snacks and weigh-ins on your own time zone.'))}`;
   return sws+`<div class="row" style="margin-top:12px;flex-wrap:wrap"><button class="mini" data-act="pushTest">${L('Отправить тест','Send a test')}</button><button class="mini danger" data-act="pushOff">${L('Выключить','Turn off')}</button></div>`;
 }
-const BUILD='2026-10-26.3';
+const BUILD='2026-10-26.4';
 function vProfile(ani){
   const p=S.profile,P=S.plan,u=U();
   const kv=(a,b)=>`<div class="kv"><span>${a}</span><b>${b}</b></div>`;
