@@ -1361,7 +1361,7 @@ function remindersBlock(sw){
   if(!PUSH.sub)return `<button class="btn" style="margin-top:12px" data-act="pushOn" ${PUSH.busy?'disabled':''}>${L('Включить уведомления','Turn on notifications')}</button>${PUSH.err?`<div class="err" style="margin-top:10px">${esc(PUSH.err)}</div>`:''}${note(L('Напомним про воду, вечерние перекусы и взвешивание по времени вашего часового пояса.','We’ll remind you about water, evening snacks and weigh-ins on your own time zone.'))}`;
   return sws+`<div class="row" style="margin-top:12px;flex-wrap:wrap"><button class="mini" data-act="pushTest">${L('Отправить тест','Send a test')}</button><button class="mini danger" data-act="pushOff">${L('Выключить','Turn off')}</button></div>`;
 }
-const BUILD='2026-10-26.1';
+const BUILD='2026-10-26.2';
 function vProfile(ani){
   const p=S.profile,P=S.plan,u=U();
   const kv=(a,b)=>`<div class="kv"><span>${a}</span><b>${b}</b></div>`;
