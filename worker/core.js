@@ -18,6 +18,7 @@
 //   ACCOUNT_DAILY_LIMIT ИИ-запросов в сутки на аккаунт (по умолчанию 40)
 //   MAX_ACCOUNTS        потолок числа аккаунтов (по умолчанию 5000), защита хранилища от массовой регистрации
 //   REGISTER_PER_IP_DAY регистраций в сутки с одного IP (по умолчанию 5)
+//   GEMINI_HEDGE_MS     через сколько миллисекунд без ответа основной модели параллельно спросить запасную и взять того, кто ответит первым (по умолчанию 6000, 0 выключает)
 //   GEMINI_THINKING     "default": не ограничивать «размышления» модели
 //   GEMINI_FALLBACK_MODEL  запасная модель, если основная перегружена (503) или упёрлась в лимит (по умолчанию gemini-3.5-flash-lite, "off" выключает)
 
@@ -392,12 +393,13 @@ async function rawGemini(req, env, who) {
 
 /* ---------------- Gemini ---------------- */
 
-async function callGemini(env, model, body, stream, limitThinking) {
+async function callGemini(env, model, body, stream, limitThinking, outer) {
   const payload = { ...body, generationConfig: { ...body.generationConfig } };
   if (limitThinking) payload.generationConfig.thinkingConfig = { thinkingLevel: 'minimal' };
   const method = stream ? 'streamGenerateContent?alt=sse' : 'generateContent';
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), UPSTREAM_TIMEOUT_MS);
+  if (outer) { if (outer.aborted) ctl.abort(); else outer.addEventListener('abort', () => ctl.abort(), { once: true }); }
   try {
     return await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:${method}`,
@@ -439,11 +441,11 @@ async function callModel(env, spec, quotaMs = 0, refund = null) {
 
   const drop = (res) => { try { if (res.r && res.r.body) res.r.body.cancel(); } catch { /* ignore */ } };
   // одна модель: при необходимости без «размышлений», с повтором после лимита и после ошибки сервера Google
-  const tryModel = async (m) => {
+  const tryModel = async (m, sig) => {
     let lim = env.GEMINI_THINKING !== 'default';
     const go = async (l) => {
       try {
-        return { r: await callGemini(env, m, body, stream, l) };
+        return { r: await callGemini(env, m, body, stream, l, sig) };
       } catch (e) {
         return { err: e && e.name === 'AbortError' ? 'timeout' : 'upstream' };
       }
@@ -452,17 +454,46 @@ async function callModel(env, spec, quotaMs = 0, refund = null) {
     // модель не принимает ограничение «размышлений»: повторяем без него
     if (res.r && res.r.status === 400 && lim) { lim = false; drop(res); res = await go(false); }
     // общий лимит Gemini на минуту: один раз повторяем через секунду, чтобы короткий всплеск не ронял запросы
-    if (res.r && res.r.status === 429) { drop(res); await sleep(1000 + Math.random() * 800); res = await go(lim); }
+    if (res.r && res.r.status === 429 && !(sig && sig.aborted)) { drop(res); await sleep(1000 + Math.random() * 800); res = await go(lim); }
     // 500/503 «модель перегружена»: короткая пауза и ещё одна попытка
-    if (res.r && res.r.status >= 500) { drop(res); await sleep(600 + Math.random() * 600); res = await go(lim); }
+    if (res.r && res.r.status >= 500 && !(sig && sig.aborted)) { drop(res); await sleep(600 + Math.random() * 600); res = await go(lim); }
     return res;
   };
 
-  let used = model;
-  let res = await tryModel(model);
-  // основная модель недоступна или упёрлась в свой лимит: пробуем запасную (у каждой модели свой лимит и своя нагрузка)
   const unavailable = (x) => x.err === 'upstream' || (x.r && (x.r.status >= 500 || x.r.status === 429 || x.r.status === 404));
-  if (alt && unavailable(res)) { drop(res); used = alt; res = await tryModel(alt); }
+  const good = (x) => !!(x && x.r && x.r.ok);
+  const hedgeMs = env.GEMINI_HEDGE_MS == null ? 6000 : Number(env.GEMINI_HEDGE_MS) || 0;
+  let used = model;
+  let res;
+  let hedged = false;
+  const cA = new AbortController();
+  const pA = tryModel(model, cA.signal);
+  if (alt && hedgeMs > 0) {
+    // Бесплатный Gemini отвечает очень неровно (от 4 до 30 секунд на тот же запрос). Если основная модель медлит,
+    // параллельно спрашиваем запасную и берём ту, что ответит первой; вторую обрываем.
+    const early = await Promise.race([pA, sleep(hedgeMs).then(() => null)]);
+    if (early) {
+      res = early;
+    } else {
+      hedged = true;
+      const cB = new AbortController();
+      const pB = tryModel(alt, cB.signal);
+      const win = await new Promise((resolve) => {
+        let left = 2, bad = null;
+        const done = (x, who) => { if (good(x)) { resolve({ res: x, who }); return; } bad = bad || { res: x, who }; if (--left === 0) resolve(bad); };
+        pA.then((x) => done(x, 'a'));
+        pB.then((x) => done(x, 'b'));
+      });
+      (win.who === 'a' ? cB : cA).abort();
+      (win.who === 'a' ? pB : pA).then(drop);
+      used = win.who === 'a' ? model : alt;
+      res = win.res;
+    }
+  } else {
+    res = await pA;
+  }
+  // основная модель недоступна или упёрлась в свой лимит: пробуем запасную (у каждой модели свой лимит и своя нагрузка)
+  if (alt && !hedged && unavailable(res)) { drop(res); used = alt; res = await tryModel(alt); }
 
   const fail = async (resp) => { if (refund) await refund(); return resp; };
   if (res.err) return fail(json({ error: res.err }, res.err === 'timeout' ? 504 : 502));
