@@ -377,6 +377,15 @@ textarea.txt:focus{box-shadow:inset 0 0 0 2.5px var(--slate)}
 .timein{height:38px;border:0;border-radius:19px;background:var(--card2);color:var(--t1);padding:0 14px;font:600 16px var(--sans)}
 .aitest{margin:10px 0 0;padding:10px 12px;border-radius:14px;background:var(--card2);font:12px/1.55 ui-monospace,Menlo,monospace;white-space:pre-wrap;overflow-wrap:anywhere;color:var(--t1)}
 .aitest:empty{display:none}
+.inp{width:100%;height:52px;border:0;border-radius:26px;background:var(--card2);color:var(--t1);padding:0 20px;font:16px var(--sans)}
+.inp:focus{box-shadow:inset 0 0 0 2.5px var(--slate)}
+.pwrow{display:flex;gap:8px;align-items:center}
+.pwrow .inp{flex:1;min-width:0}
+.stack-sm{display:flex;flex-direction:column;gap:10px}
+.linkbtn{background:none;border:0;padding:6px 2px;color:var(--t2);font:600 14px var(--sans);text-decoration:underline;text-underline-offset:3px;align-self:flex-start}
+.rcode{font:600 22px/1.35 var(--disp);letter-spacing:.03em;text-align:center;padding:20px 10px;border-radius:24px;background:var(--card2);-webkit-user-select:all;user-select:all;white-space:nowrap}
+.cmp{display:flex;flex-direction:column;gap:3px;padding:13px 15px;border-radius:20px;background:var(--card2);font-size:14px}
+.cmp b{font-weight:700}
 .err{padding:13px 15px;border-radius:18px;background:rgba(217,119,87,.2);color:var(--t1);font-size:14px}
 
 .toast{position:absolute;left:50%;bottom:calc(98px + env(safe-area-inset-bottom,0px));transform:translate(-50%,20px);background:var(--slate);color:var(--ivory);padding:12px 18px;border-radius:20px;font:600 14px var(--sans);opacity:0;pointer-events:none;transition:all .45s var(--spring);z-index:60;white-space:nowrap;max-width:92%;overflow:hidden;text-overflow:ellipsis}
@@ -544,6 +553,17 @@ async function reconcile(){
     else if(S.onboarded&&(S.updatedAt||0)>(d.updatedAt||0))await push();
   }else if(S.onboarded)await push();
 }
+async function cloudGet(){
+  const r=await fetch('/api/state',{headers:authHeaders(),cache:'no-store'});
+  if(r.status===401){let j={};try{j=await r.json()}catch(e){}if(j.error==='bad_token')sessionLost();throw new Error('state 401')}
+  if(!r.ok)throw new Error('state '+r.status);
+  const j=await r.json();return j.exists?{json:j.json,updatedAt:j.updatedAt}:null;
+}
+async function cloudSet(o){
+  const r=await fetch('/api/state',{method:'PUT',headers:authHeaders(),body:JSON.stringify(o)});
+  if(r.status===401){let j={};try{j=await r.json()}catch(e){}if(j.error==='bad_token')sessionLost();throw new Error('state 401')}
+  if(!r.ok)throw new Error('state '+r.status);
+}
 async function initSync(){
   if(SYNC)return;
   try{
@@ -560,11 +580,8 @@ async function initSync(){
         if((d.updatedAt||0)>(S.updatedAt||0)+1){try{applyRemote(JSON.parse(d.json))}catch(e){}}
       },()=>{});
       liveWatch=true;
-    }else if(BACKEND&&getPass()){
-      SYNC={
-        get:async()=>{const r=await fetch('/api/state',{headers:authHeaders(),cache:'no-store'});if(!r.ok)throw new Error('state '+r.status);const j=await r.json();return j.exists?{json:j.json,updatedAt:j.updatedAt}:null},
-        set:async o=>{const r=await fetch('/api/state',{method:'PUT',headers:authHeaders(),body:JSON.stringify(o)});if(!r.ok)throw new Error('state '+r.status)}
-      };
+    }else if(BACKEND&&(getTok()||getPass())){
+      SYNC={get:cloudGet,set:cloudSet};
       await reconcile();
     }else return;
     syncOn=true;syncAt=Date.now();
@@ -769,7 +786,7 @@ async function initBackend(){
     SAMPLE=(await (window.claude&&window.claude.use?window.claude.use('sample'):null))||null;
     if(SAMPLE){const l=await SAMPLE.limits().catch(()=>null);if(l&&l.images){SAMPLE_IMG=true;IMG_TYPES=l.images.mediaTypes.join(',')}}
     if(!SAMPLE){await initBackend();if(BACKEND){initSync();pushInit();if(!S.onboarded&&ob&&ob.step==='welcome')render()}}
-    if(S.onboarded&&(nav.tab==='coach'||nav.tab==='profile')&&!sh)renderMain({keep:true});
+    if(S.onboarded&&(nav.tab==='home'||nav.tab==='coach'||nav.tab==='profile')&&!sh)renderMain({keep:true});
   }catch(e){SAMPLE=null}
 })();
 const aiErr=c=>({
@@ -780,6 +797,7 @@ const aiErr=c=>({
   images_unavailable:L('Фото сейчас недоступно. Опишите еду словами.','Photos aren’t available right now. Describe the food in words.'),
   invalid_json:L('ИИ ответил не в том формате. Попробуйте ещё раз.','The AI replied in the wrong format. Try again.'),
   upstream_error:L('Сбой связи. Попробуйте ещё раз.','Connection problem. Try again.'),
+  bad_token:L('Сессия истекла. Войдите в аккаунт заново.','Session expired. Sign in again.'),
   busy:L('Gemini сейчас перегружен. Повторите через минуту.','Gemini is overloaded right now. Try again in a minute.'),
   refused:L('ИИ не смог это оценить. Уточните описание.','The AI couldn’t estimate this. Clarify the description.'),
   empty:L('Не вижу еды. Попробуйте другое фото или опишите словами.','I can’t see food. Try another photo or describe it in words.'),
@@ -844,7 +862,9 @@ function parseJSON(t){
   throw{code:'invalid_json'};
 }
 const errDetail=(status,j)=>[j&&j.status?'Gemini '+j.status:(status?'HTTP '+status:''),j&&j.finish?'finish '+j.finish:'',j&&j.detail?String(j.detail).slice(0,160):''].filter(Boolean).join(' · ');
-const errCode=(status,j)=>j&&(j.error==='limit_day'||j.error==='limit_ip')?'limit_day':j&&j.error==='limit_global'?'limit_global':j&&j.error==='too_large'?'too_large':j&&j.error==='bad_pass'?'bad_pass':(status===429||(j&&j.error==='rate_limited'))?'rate_limited':j&&j.error==='no_key'?'no_key':(j&&j.error==='upstream'&&(j.status===503||j.status===500))?'busy':(j&&j.error==='timeout')?'timeout':j&&j.error==='empty'?'refused':'upstream_error';
+const errCode=(status,j)=>j&&j.error==='bad_token'?'bad_token':j&&(j.error==='limit_day'||j.error==='limit_ip')?'limit_day':j&&j.error==='limit_global'?'limit_global':j&&j.error==='too_large'?'too_large':j&&j.error==='bad_pass'?'bad_pass':(status===429||(j&&j.error==='rate_limited'))?'rate_limited':j&&j.error==='no_key'?'no_key':(j&&j.error==='upstream'&&(j.status===503||j.status===500))?'busy':(j&&j.error==='timeout')?'timeout':j&&j.error==='empty'?'refused':'upstream_error';
+// Запрос с просроченной сессией: аккаунт отвязывается, приложение продолжает работать как гость.
+function failOf(status,j){const code=errCode(status,j);if(code==='bad_token')sessionLost();return{code,detail:errDetail(status,j)}}
 async function imgPayload(file){const blob=await prepImage(file);return{mime:blob.type||'image/jpeg',data:await blobToB64(blob)}}
 async function aiCall(body,{signal,timeoutMs=45000}={}){
   const t0=performance.now();
@@ -860,7 +880,7 @@ async function aiCall(body,{signal,timeoutMs=45000}={}){
     if(e&&e.name==='AbortError')throw{code:'cancelled'};
     throw{code:'upstream_error'};
   }finally{clearTimeout(tm)}
-  if(!r.ok)throw{code:errCode(r.status,j),detail:errDetail(r.status,j)};
+  if(!r.ok)throw failOf(r.status,j);
   AIDBG='ai '+Math.round(performance.now()-t0)+'ms'+(j.usage?' think '+(j.usage.thoughtsTokenCount||0)+' out '+(j.usage.candidatesTokenCount||0):'');
   return j.text;
 }
@@ -878,7 +898,7 @@ async function aiStream(body,{onText,timeoutMs=40000,firstMs=0}={}){
     try{r=await fetch('/api/ai',{method:'POST',headers:authHeaders(),body:JSON.stringify(body),signal:ctl.signal})}
     catch(e){throw{code:timedOut?'timeout':'upstream_error'}}
     status=r.status;srv=r.headers.get('x-crumb-ms')||'';
-    if(!r.ok){let j={};try{j=await r.json()}catch(e){}throw{code:errCode(r.status,j),detail:errDetail(r.status,j)}}
+    if(!r.ok){let j={};try{j=await r.json()}catch(e){}throw failOf(r.status,j)}
     const reader=r.body.getReader(),dec=new TextDecoder();let buf='';
     try{
       for(;;){
@@ -939,7 +959,10 @@ const PUSH={cfg:null,supported:false,sub:false,perm:'default',busy:false,err:''}
 const isIOS=()=>/iPad|iPhone|iPod/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
 const isStandalone=()=>navigator.standalone===true||(window.matchMedia&&matchMedia('(display-mode: standalone)').matches);
 const getId=()=>{try{let id=localStorage.getItem('crumb-id');if(!id||!/^[A-Za-z0-9_-]{16,64}$/.test(id)){const a=new Uint8Array(16);crypto.getRandomValues(a);id=btoa(String.fromCharCode(...a)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');localStorage.setItem('crumb-id',id)}return id}catch(e){return 'anon-'+Math.random().toString(36).slice(2,12)+'xxxxxx'}};
-const authHeaders=()=>({'content-type':'application/json','x-crumb-id':getId(),'x-crumb-pass':getPass()});
+const getTok=()=>{try{return localStorage.getItem('crumb-token')||''}catch(e){return''}};
+const getLogin=()=>{try{return localStorage.getItem('crumb-login')||''}catch(e){return''}};
+function setSession(tok,login){try{if(tok){localStorage.setItem('crumb-token',tok);localStorage.setItem('crumb-login',login||'')}else{localStorage.removeItem('crumb-token');localStorage.removeItem('crumb-login')}}catch(e){}}
+const authHeaders=()=>({'content-type':'application/json','x-crumb-id':getId(),'x-crumb-pass':getPass(),'x-crumb-token':getTok()});
 const b64uBytes=s=>{const p='='.repeat((4-s.length%4)%4),b=atob((s+p).replace(/-/g,'+').replace(/_/g,'/'));return Uint8Array.from(b,c=>c.charCodeAt(0))};
 const withTimeout=(p,ms)=>Promise.race([p,new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),ms))]);
 async function setMeta(k,v){try{const c=await caches.open('crumb-meta');await c.put('/__'+k,new Response(String(v)))}catch(e){}}
@@ -957,7 +980,7 @@ async function pushInit(){
     try{
       const reg=await withTimeout(navigator.serviceWorker.ready,4000),s=await reg.pushManager.getSubscription();
       PUSH.sub=!!s&&PUSH.perm==='granted';
-      if(PUSH.sub&&getPass())pushSync(s).catch(()=>{});
+      if(PUSH.sub&&(getPass()||getTok()))pushSync(s).catch(()=>{});
     }catch(e){}
   }
   if(S.onboarded&&nav.tab==='profile'&&!sh)renderMain({keep:true});
@@ -1211,7 +1234,7 @@ const vWelcome=()=>`<div class="welcome stag">
   <li><span class="bi">${ico('cookie',18)}</span><span>${L('<b>Перекусы на виду.</b> Видно, сколько калорий дают мелочи за день и за неделю.','<b>Snacks in plain sight.</b> See how many calories the small stuff adds per day and per week.')}</span></li>
   <li><span class="bi">${ico('target',18)}</span><span>${L('<b>План под вас.</b> Калории, белок и вода по 11 вопросам, с безопасным темпом.','<b>A plan built for you.</b> Calories, protein and water from 11 questions, at a safe pace.')}</span></li>
  </ul>
- <div style="--i:4;margin-top:auto;display:flex;flex-direction:column;gap:10px">${BACKEND?`<div class="fix"><input id="passIn" type="password" autocomplete="off" value="${esc(getPass())}" placeholder="${L('Личный код (необязательно)','Personal code (optional)')}" aria-label="${L('Код доступа','Access code')}"><button class="btn sm" data-act="savePass">${L('Войти','Enter')}</button></div>`:''}<button class="btn" data-act="obStart">${L('Составить мой план','Build my plan')}</button><button class="btn ghost" data-act="obDemo">${L('Посмотреть пример с данными','See an example with data')}</button><p class="sub" style="font-size:12.5px;text-align:center">${L('Данные хранятся на вашем устройстве. Для оценки еды фото и текст отправляются в Google Gemini.','Your data stays on your device. For food estimates, photos and text are sent to Google Gemini.')}</p></div></div>`;
+ <div style="--i:4;margin-top:auto;display:flex;flex-direction:column;gap:10px"><button class="btn" data-act="obStart">${L('Составить мой план','Build my plan')}</button>${BACKEND&&!getTok()?`<button class="btn ghost" data-act="authOpen" data-mode="login">${L('У меня уже есть аккаунт','I already have an account')}</button>`:''}<button class="btn ghost" data-act="obDemo">${L('Посмотреть пример с данными','See an example with data')}</button><p class="sub" style="font-size:12.5px;text-align:center">${L('Данные хранятся на вашем устройстве, пока вы не создадите аккаунт. Для оценки еды фото и текст отправляются в Google Gemini.','Your data stays on your device until you create an account. For food estimates, photos and text are sent to Google Gemini.')}</p></div></div>`;
 const AN=[['Считаю базовый обмен веществ','Calculating your base metabolism'],['Учитываю работу, тренировки и сон','Factoring in work, workouts and sleep'],['Подбираю безопасный темп к цели','Choosing a safe pace to your goal'],['Раскладываю калории по приёмам и перекусам','Splitting calories across meals and snacks'],['Считаю норму воды','Calculating your water target']];
 const vAnalysis=()=>`<div class="an"><div>${logo(44)}</div><div><h2 class="h1">${L('Собираю ваш план','Building your plan')}</h2><p class="sub" style="margin-top:6px">${L('Это займёт несколько секунд.','This takes a few seconds.')}</p></div><div class="an-list">${AN.map((t,i)=>`<div class="an-item" id="an${i}"><span class="an-dot">${ico('check',13)}</span><span>${T(t)}</span></div>`).join('')}</div></div>`;
 async function runAnalysis(){
@@ -1240,7 +1263,7 @@ function vPlanResult(){
     <div class="legend">${parts.map(x=>`<span><em style="background:${x[2]}"></em>${x[0]} ${nf(pl.kcal*x[1])}</span>`).join('')}</div></div>
    ${notes.length?`<div style="--i:5"><span class="eyebrow">${L('Что мы учли','What we took into account')}</span><ul class="dots" style="margin-top:10px">${notes.map(n=>`<li>${n}</li>`).join('')}</ul></div>`:''}
    <p class="sub" style="font-size:12.5px;--i:6">${L('Это ориентир на основе формулы Миффлина — Сан-Жеора, а не медицинская рекомендация.','A guide based on the Mifflin–St Jeor formula, not medical advice.')}</p></div>
-   <div class="ob-foot"><button class="btn" data-act="obFinish">${L('Начать вести дневник','Start my diary')}</button></div></div>`;
+   <div class="ob-foot">${BACKEND&&!getTok()?`<button class="btn ghost" data-act="authOpen" data-mode="register">${L('Создать аккаунт и сохранить план','Create an account to keep this plan')}</button>`:''}<button class="btn" data-act="obFinish">${L('Начать вести дневник','Start my diary')}</button></div></div>`;
 }
 function finishOb(){
   const p=JSON.parse(JSON.stringify(D)),pl=ob.plan,th=S.theme,lg=S.lang;
@@ -1286,9 +1309,10 @@ function vHome(ani){
   const tape=ents.map(e=>`<i class="${e.type==='snack'?'sn':'ml'}" style="width:${Math.min(100,e.kcal/P.kcal*100)}%" title="${esc(e.title)}"></i>`).join('');
   const share=t.kcal?Math.round(t.snackK/t.kcal*100):0;
   const eaten=Math.min(100,t.kcal/P.kcal*100);
+  const accHint=(BACKEND&&!getTok()&&S.onboarded&&!S.accHintDone&&!S.demo)?`<div class="note" style="margin-bottom:12px">${ico('user',18)}<span>${L('Создайте аккаунт: цели, вес и продукты сохранятся в облаке и будут на любом телефоне.','Create an account: your goals, weight and foods are saved in the cloud and follow you to any phone.')} <button class="mini" style="margin-left:6px" data-act="authOpen" data-mode="register">${L('Создать','Create')}</button></span><button class="icon-btn" style="width:30px;height:30px;flex:none" data-act="accHintDone" aria-label="${L('Закрыть','Close')}">${ico('x',14)}</button></div>`:'';
   const hint=(BACKEND&&isIOS()&&!isStandalone()&&!S.hintDone)?`<div class="note" style="margin-bottom:12px">${ico('info',18)}<span>${L('Добавьте Crumb на экран «Домой»: «Поделиться» → «На экран “Домой”». Так он открывается как обычное приложение и сможет присылать уведомления.','Add Crumb to your Home Screen: Share → Add to Home Screen. It then opens like a normal app and can send notifications.')}</span><button class="icon-btn" style="width:30px;height:30px;flex:none" data-act="hintDone" aria-label="${L('Закрыть','Close')}">${ico('x',14)}</button></div>`:'';
   return`<div class="top"><div><span class="eyebrow">${cap(T(DF[d.getDay()]))}, ${dm(d)}</span><h1 class="h1">${isToday?L('Сегодня','Today'):L('День','Day')}</h1></div>${st?`<span class="pill">${ico('flame',16)}${st} ${plDays(st)}</span>`:''}</div>
-  ${hint}
+  ${hint||accHint}
   <div class="days"><i class="dpill"></i>${strip.join('')}</div>
   <div class="bento ${ani?'stag':''}">
    <div class="bt a" style="--i:0"><div><small>${over?L('Сверх нормы','Over the target'):L('Осталось','Left today')}</small><div class="n num" ${A('kc','count',Math.abs(left),0)}>${nf(Math.abs(left))}</div><small>${L('из','of')} ${nf(P.kcal)} ${u.kcal} · ${L('съедено','eaten')} ${nf(t.kcal)}</small></div><div class="bar"><i ${A('kb','width',(over?100:eaten)+'%','0%')} style="${over?'background:var(--ivory)':''}"></i></div></div>
@@ -1467,18 +1491,25 @@ function remindersBlock(sw){
   return sws+`<div class="row" style="margin-top:12px;flex-wrap:wrap"><button class="mini" data-act="pushTest">${L('Отправить тест','Send a test')}</button><button class="mini danger" data-act="pushOff">${L('Выключить','Turn off')}</button></div>`;
 }
 window.addEventListener('resize',()=>{placeTabPill(true);if(nav.tab==='home')placeDayPill()});
-const BUILD='2026-10-26.6';
+const BUILD='2026-10-26.7';
+function acctCard(kv,syncTxt){
+  if(!BACKEND)return'';
+  const row='<div class="row" style="margin-top:12px;gap:8px;flex-wrap:wrap">';
+  if(getTok())return`<section class="card" style="--i:1"><span class="eyebrow">${L('Аккаунт','Account')}</span><div style="margin-top:8px">${kv(L('Логин','Login'),esc(getLogin()))}</div><p class="sub" style="font-size:14px;margin-top:8px">${syncTxt}</p>${row}<button class="mini" data-act="acctOpen">${L('Управление','Manage')}</button><button class="mini" data-act="logout">${L('Выйти','Sign out')}</button></div></section>`;
+  return`<section class="card" style="--i:1"><span class="eyebrow">${L('Аккаунт','Account')}</span><p class="sub" style="font-size:14px;margin-top:8px">${L('Войдите или создайте аккаунт: цели, вес, дневник, частые продукты и разговоры с коучем сохранятся в облаке и будут на любом телефоне. В аккаунте больше запросов к ИИ в день.','Sign in or create an account: your goals, weight, diary, frequent foods and coach chats are saved in the cloud and follow you to any phone. An account also gets more AI requests per day.')}</p>${row}<button class="btn sm" data-act="authOpen" data-mode="register">${L('Создать аккаунт','Create account')}</button><button class="btn ghost sm" data-act="authOpen" data-mode="login">${L('Войти','Sign in')}</button></div></section>`;
+}
 function vProfile(ani){
   const p=S.profile,P=S.plan,u=U();
   const kv=(a,b)=>`<div class="kv"><span>${a}</span><b>${b}</b></div>`;
   const sw=(k,t,s)=>`<button class="switch ${S.rem[k]?'on':''}" data-act="rem" data-k="${k}"><span><b style="font-weight:700">${t}</b><br><small class="muted">${s}</small></span><span class="sw"></span></button>`;
-  const syncTxt=syncOn?L(`Облачная синхронизация включена. Данные доступны на всех ваших устройствах${syncAt?' · '+new Date(syncAt).toLocaleTimeString(loc(),{hour:'2-digit',minute:'2-digit'}):''}.`,`Cloud sync is on. Your data follows you across devices${syncAt?' · '+new Date(syncAt).toLocaleTimeString(loc(),{hour:'2-digit',minute:'2-digit'}):''}.`):L('Синхронизация недоступна в этом окне, данные хранятся только на этом устройстве.','Sync isn’t available in this window, data stays on this device only.');
+  const syncTxt=getTok()&&!syncOn?L('Нет связи с облаком: данные сохраняются на устройстве и отправятся позже.','No connection to the cloud: data is kept on this device and will be sent later.'):syncOn?L(`Облачная синхронизация включена. Данные доступны на всех ваших устройствах${syncAt?' · '+new Date(syncAt).toLocaleTimeString(loc(),{hour:'2-digit',minute:'2-digit'}):''}.`,`Cloud sync is on. Your data follows you across devices${syncAt?' · '+new Date(syncAt).toLocaleTimeString(loc(),{hour:'2-digit',minute:'2-digit'}):''}.`):L('Синхронизация недоступна в этом окне, данные хранятся только на этом устройстве.','Sync isn’t available in this window, data stays on this device only.');
   const aiTxt=SAMPLE?L('ИИ: Claude (прототип внутри claude.ai).','AI: Claude (prototype inside claude.ai).'):BACKEND?L('ИИ: Gemini, работает сразу, код не нужен. Личный код нужен только для синхронизации между устройствами и большего лимита.','AI: Gemini, works right away, no code needed. A personal code is only for syncing between devices and a higher limit.'):L('ИИ: примеры ответов, сервер Gemini не подключён.','AI: sample replies, the Gemini server isn’t connected.');
   const testBlock=BACKEND?`<button class="btn ghost sm" style="margin-top:12px;width:100%" data-act="aiTest">${L('Проверить ИИ','Test the AI')}</button><pre id="aiTestOut" class="aitest"></pre>`:'';
   const passBlock=BACKEND?`<div class="fix" style="margin-top:12px"><input id="passIn" type="password" autocomplete="off" value="${esc(getPass())}" placeholder="${L('Личный код (необязательно)','Personal code (optional)')}" aria-label="${L('Личный код','Personal code')}"><button class="btn sm" data-act="savePass">${L('Сохранить','Save')}</button></div>`:'';
   return`<div class="top"><div><span class="eyebrow">${L('Аккаунт','Account')}</span><h1 class="h1">${L('Профиль','Profile')}</h1></div></div>
   <div class="stack ${ani?'stag':''}">
   ${S.demo?`<div class="note warn" style="--i:0">${ico('info',18)}<span>${L('Сейчас загружены демо-данные: 4 недели записей и веса. Очистите их, чтобы начать с нуля.','Demo data is loaded: 4 weeks of entries and weights. Clear it to start from scratch.')}</span></div>`:''}
+  ${acctCard(kv,syncTxt)}
   <section class="card" style="--i:1"><span class="eyebrow">${L('Ваш план','Your plan')}</span><div style="margin-top:8px">
    ${kv(L('Цель','Goal'),lab('goal',p.goal))}${kv(L('Калории','Calories'),nf(P.kcal)+' '+u.kcal)}${kv(L('Б / Ж / У','P / F / C'),P.p+' / '+P.f+' / '+P.c+' '+u.g)}${kv(L('Вода','Water'),lit(P.water)+' '+u.l)}${kv(L('Вес','Weight'),nf1(p.w)+' → '+nf1(P.targetW)+' '+u.kg)}${kv(L('Финиш','Finish'),fmtDate(parseKey(P.date)))}</div>
    <button class="btn ghost" style="margin-top:12px" data-act="redo">${L('Пройти анализ заново','Retake the assessment')}</button></section>
@@ -1488,7 +1519,7 @@ function vProfile(ani){
   <section class="card" style="--i:3"><span class="eyebrow">${L('Напоминания','Reminders')}</span>${remindersBlock(sw)}</section>
   <section class="card soft" style="--i:4"><span class="eyebrow">${L('Дальше в планах','Coming next')}</span><ul class="dots" style="margin-top:10px"><li>${L('Штрихкоды и большая база продуктов','Barcodes and a big food database')}<span class="soon">${L('скоро','soon')}</span></li><li>${L('Apple Здоровье и шаги','Apple Health and steps')}<span class="soon">${L('скоро','soon')}</span></li><li>${L('Виджет и быстрая запись с экрана блокировки','Widget and quick logging from the lock screen')}<span class="soon">${L('скоро','soon')}</span></li><li>${L('Голосовой ввод','Voice input')}<span class="soon">${L('скоро','soon')}</span></li></ul></section>
   <section class="card" style="--i:5"><span class="eyebrow">${L('Данные','Data')}</span><p class="sub" style="font-size:14px;margin:8px 0 12px">${syncTxt}</p>
-   <div class="row" style="flex-wrap:wrap">${S.demo?'':`<button class="mini" data-act="demo">${L('Загрузить демо-данные','Load demo data')}</button>`}${confirmReset?`<button class="mini danger" data-act="resetDo">${L('Да, удалить всё','Yes, delete everything')}</button><button class="mini" data-act="resetAsk">${L('Отмена','Cancel')}</button>`:`<button class="mini danger" data-act="resetAsk">${L('Очистить данные','Clear data')}</button>`}</div><p class="muted" style="font-size:12px;margin-top:12px">Crumb · ${BUILD}</p></section>
+   <div class="row" style="flex-wrap:wrap">${S.demo?'':`<button class="mini" data-act="demo">${L('Загрузить демо-данные','Load demo data')}</button>`}${confirmReset?`<button class="mini danger" data-act="resetDo">${L('Да, удалить всё','Yes, delete everything')}</button><button class="mini" data-act="resetAsk">${L('Отмена','Cancel')}</button>`:`<button class="mini danger" data-act="resetAsk">${L('Очистить данные','Clear data')}</button>`}</div>${confirmReset&&getTok()?`<p class="sub" style="font-size:12.5px;margin-top:10px">${L('Вы вошли в аккаунт: данные в облаке тоже будут очищены.','You’re signed in: the data in the cloud will be cleared too.')}</p>`:''}<p class="muted" style="font-size:12px;margin-top:12px">Crumb · ${BUILD}</p></section>
   </div>`;
 }
 
@@ -1500,8 +1531,9 @@ function openSheet(init){
   paintSheet();bindGrab();
   requestAnimationFrame(()=>requestAnimationFrame(()=>r.classList.add('open')));
 }
-function closeSheet(){
+function closeSheet(force){
   const r=$('#sheetRoot');if(!sh)return;
+  if(sh.lock&&force!==true){toast(L('Сначала сохраните код восстановления','Save the recovery code first'));return}
   stopTicker();if(sh.ctl)try{sh.ctl.abort()}catch(e){}
   const u=sh.url;sh=null;r.classList.remove('open');
   setTimeout(()=>{if(!sh){r.innerHTML='';if(u)URL.revokeObjectURL(u)}},600);
@@ -1513,9 +1545,169 @@ function bindGrab(){
   const end=()=>{if(y0===null)return;y0=null;s.style.transition='';s.style.transform='';if(dy>110)closeSheet()};
   g.addEventListener('pointerup',end);g.addEventListener('pointercancel',end);
 }
+/* ---------- аккаунт: логин и пароль ---------- */
+async function pushResync(){try{if(!PUSH.sub)return;const reg=await navigator.serviceWorker.ready,x=await reg.pushManager.getSubscription();if(x)await pushSync(x)}catch(e){}}
+function dropSync(){SYNC=null;docRef=null;liveWatch=false;syncOn=false}
+function sessionLost(){
+  if(!getTok())return;
+  setSession('');dropSync();pushResync();
+  toast(L('Сессия истекла. Войдите снова.','Session expired. Sign in again.'));
+  if(S.onboarded&&nav.tab==='profile'&&!sh)renderMain({keep:true});
+}
+async function authApi(name,body,method='POST'){
+  let r,j={};
+  try{r=await fetch('/api/auth/'+name,{method,headers:authHeaders(),body:method==='GET'?undefined:JSON.stringify(body||{})});try{j=await r.json()}catch(e){}}
+  catch(e){throw{code:'network'}}
+  if(!r.ok)throw{code:j.error||'upstream_error',retryMin:j.retryMin,status:r.status};
+  return j;
+}
+const authMsg=e=>{const m=e&&e.retryMin||15;return({
+  bad_credentials:L('Неверный логин или пароль.','Wrong login or password.'),
+  bad_recovery:L('Код восстановления не подошёл.','That recovery code doesn’t match.'),
+  locked:L(`Слишком много попыток. Попробуйте через ${m} мин.`,`Too many attempts. Try again in ${m} min.`),
+  limit_ip:L('Слишком много попыток с этого адреса. Попробуйте через час.','Too many attempts from this address. Try again in an hour.'),
+  limit_register:L('С этого адреса сегодня создано много аккаунтов. Попробуйте завтра.','Too many accounts were created from this address today. Try tomorrow.'),
+  login_taken:L('Этот логин занят. Выберите другой.','That login is taken. Pick another one.'),
+  login_invalid:L('Логин: 3–32 знака, латиница, цифры, точка, дефис или подчёркивание.','Login: 3–32 characters, Latin letters, digits, dot, dash or underscore.'),
+  password_weak:L('Пароль слишком простой: нужно от 8 знаков, и не из самых популярных.','The password is too weak: 8+ characters and not a common one.'),
+  closed:L('Регистрация временно закрыта.','Sign-ups are closed for now.'),
+  bad_token:L('Сессия истекла. Войдите снова.','Session expired. Sign in again.'),
+  network:L('Нет связи с сервером. Проверьте интернет.','No connection to the server. Check your internet.'),
+  storage:L('Сервер временно недоступен. Попробуйте ещё раз.','The server is temporarily unavailable. Try again.')
+})[e&&e.code]||L('Не получилось. Попробуйте ещё раз.','Something went wrong. Try again.')};
+const acctMsg=e=>e&&e.code==='bad_credentials'?L('Неверный пароль.','Wrong password.'):authMsg(e);
+function authErr(m){const el=$('#authErr');if(!el)return;el.textContent=m;el.hidden=false}
+function authBusy(b){if(sh)sh.busy=b;const g=$('#authGo');if(g){g.disabled=b;g.textContent=b?L('Подождите…','Please wait…'):g.dataset.label}}
+function openAuth(mode){openSheet({view:'auth',mode,lg:'',pw:'',show:false});setTimeout(()=>{const i=$('#lgIn');if(i)i.focus()},380)}
+const field=(id,key,ph,o={})=>`<input class="inp" id="${id}" data-in="${key}" ${o.type?`type="${o.type}"`:''} ${o.ac?`autocomplete="${o.ac}"`:'autocomplete="off"'} autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="${ph}" aria-label="${ph}" value="${esc(sh[key]||'')}">`;
+function authBody(){
+  const m=sh.mode,reg=m==='register';
+  const seg=`<div class="seg">${[['login',L('Войти','Sign in')],['register',L('Создать аккаунт','Create account')]].map(t=>`<button type="button" class="${m===t[0]?'on':''}" data-act="authMode" data-mode="${t[0]}">${t[1]}</button>`).join('')}</div>`;
+  const intro=reg?L('Логин и пароль сохранят ваш план, дневник, вес, частые продукты и разговоры с коучем в облаке. На новом телефоне просто войдите.','A login and password keep your plan, diary, weight, frequent foods and coach chats in the cloud. On a new phone, just sign in.'):L('Войдите, чтобы вернуть свои данные на этом устройстве.','Sign in to bring your data to this device.');
+  return seg+`<p class="sub" style="font-size:14px">${intro}</p>
+  <form class="stack-sm" data-act-submit="auth" novalidate>
+   <input class="inp" id="lgIn" data-in="lg" name="username" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="${L('Логин','Login')}" aria-label="${L('Логин','Login')}" value="${esc(sh.lg||'')}">
+   <div class="pwrow"><input class="inp" id="pwIn" data-in="pw" name="password" type="${sh.show?'text':'password'}" autocomplete="${reg?'new-password':'current-password'}" placeholder="${L('Пароль','Password')}" aria-label="${L('Пароль','Password')}" value="${esc(sh.pw||'')}"><button type="button" class="mini" id="pwTog" data-act="pwShow">${sh.show?L('Скрыть','Hide'):L('Показать','Show')}</button></div>
+   <button type="submit" class="sr" tabindex="-1" aria-hidden="true"></button>
+  </form>
+  <div class="err" id="authErr" hidden></div>
+  ${reg?`<p class="sub" style="font-size:12.5px">${L('Логин: латиница, цифры, . - _ (3–32 знака). Пароль: от 8 знаков. Почты пока нет, поэтому дальше вы получите код восстановления: сохраните его.','Login: Latin letters, digits, . - _ (3–32). Password: 8+ characters. There’s no email yet, so next you’ll get a recovery code: save it.')}</p>`:`<button type="button" class="linkbtn" data-act="authReset">${L('Забыли пароль?','Forgot your password?')}</button>`}`;
+}
+function resetBody(){
+  return`<p class="sub" style="font-size:14px">${L('Введите логин, код восстановления, который вы сохранили при регистрации, и новый пароль.','Enter your login, the recovery code you saved at sign-up, and a new password.')}</p>
+  <form class="stack-sm" data-act-submit="auth" novalidate>
+   ${field('lgIn','lg',L('Логин','Login'),{ac:'username'})}
+   ${field('rcIn','rc',L('Код восстановления','Recovery code'))}
+   ${field('npIn','np',L('Новый пароль','New password'),{type:'password',ac:'new-password'})}
+   <button type="submit" class="sr" tabindex="-1" aria-hidden="true"></button>
+  </form>
+  <div class="err" id="authErr" hidden></div>
+  <button type="button" class="linkbtn" data-act="authMode" data-mode="login">${L('Назад ко входу','Back to sign in')}</button>`;
+}
+function recoveryBody(){
+  return`<div class="note warn">${ico('info',18)}<span>${L('Если забудете пароль, это единственный способ вернуть доступ: почты у аккаунта пока нет. Сохраните код в заметках или в менеджере паролей. Показываем его один раз.','If you forget your password, this is the only way back in: the account has no email yet. Save the code in your notes or a password manager. It’s shown once.')}</span></div>
+  <div class="rcode" id="rcode">${esc(sh.code).replace(/^([^-]+-[^-]+)-/,'$1<br>')}</div>
+  <div class="row"><button class="btn ghost sm" data-act="rcCopy">${L('Скопировать','Copy')}</button></div>`;
+}
+function stateSummary(st,u){
+  const days=Object.keys((st&&st.log)||{}).filter(k=>(((st.log[k]||{}).entries)||[]).length).length;
+  const kg=st&&st.weights&&st.weights.length?nf1(st.weights[st.weights.length-1].kg)+' '+U().kg:'—';
+  return`${days} ${plDays(days)} ${L('записей','of entries')} · ${L('вес','weight')} ${kg}${u?' · '+L('обновлено','updated')+' '+new Date(u).toLocaleDateString(loc(),{day:'numeric',month:'short'}):''}`;
+}
+function conflictBody(){
+  return`<p class="sub" style="font-size:14px">${L('Выберите, какие данные оставить. Другие будут заменены.','Choose which data to keep. The other will be replaced.')}</p>
+  <div class="cmp"><b>${L('В аккаунте','In the account')}</b><span>${stateSummary(sh.cloud,sh.cloudAt)}</span></div>
+  <button class="btn" data-act="useCloud">${L('Взять данные из аккаунта','Use the account’s data')}</button>
+  <div class="cmp"><b>${L('На этом устройстве','On this device')}</b><span>${stateSummary(S,S.updatedAt)}</span></div>
+  <button class="btn ghost" data-act="useLocal">${L('Оставить данные с этого устройства','Keep this device’s data')}</button>`;
+}
+function acctBody(){
+  const sub=sh.sub,back=`<button type="button" class="linkbtn" data-act="acctSub" data-sub="">${L('Назад','Back')}</button>`;
+  const err='<div class="err" id="authErr" hidden></div>';
+  const head=`<div class="kv"><span>${L('Вы вошли как','Signed in as')}</span><b>${esc(getLogin())}</b></div>`;
+  if(sub==='pass')return head+`<form class="stack-sm" data-act-submit="auth" novalidate>${field('cpIn','cp',L('Текущий пароль','Current password'),{type:'password',ac:'current-password'})}${field('npIn','np',L('Новый пароль','New password'),{type:'password',ac:'new-password'})}<button type="submit" class="sr" tabindex="-1" aria-hidden="true"></button></form>${err}<button class="btn" data-act="acctPass">${L('Сохранить пароль','Save password')}</button><p class="sub" style="font-size:12.5px">${L('На других устройствах придётся войти заново.','You’ll need to sign in again on other devices.')}</p>${back}`;
+  if(sub==='rec')return head+`<p class="sub" style="font-size:14px">${L('Старый код перестанет работать. Подтвердите паролем.','The old code stops working. Confirm with your password.')}</p><form class="stack-sm" data-act-submit="auth" novalidate>${field('cpIn','cp',L('Пароль','Password'),{type:'password',ac:'current-password'})}<button type="submit" class="sr" tabindex="-1" aria-hidden="true"></button></form>${err}<button class="btn" data-act="acctRec">${L('Выдать новый код','Issue a new code')}</button>${back}`;
+  if(sub==='del')return head+`<div class="note warn">${ico('info',18)}<span>${L('Аккаунт и все данные в облаке будут удалены без возможности восстановления. Данные на этом устройстве останутся.','The account and all cloud data will be deleted for good. Data on this device stays.')}</span></div><form class="stack-sm" data-act-submit="auth" novalidate>${field('cpIn','cp',L('Пароль','Password'),{type:'password',ac:'current-password'})}<button type="submit" class="sr" tabindex="-1" aria-hidden="true"></button></form>${err}<button class="btn" style="background:#B4301F;color:#fff" data-act="acctDel">${L('Удалить навсегда','Delete for good')}</button>${back}`;
+  return head+`<p class="sub" style="font-size:14px">${syncOn?L('Облачная синхронизация включена.','Cloud sync is on.'):L('Синхронизация сейчас не работает.','Sync isn’t running right now.')}</p>
+  <button class="btn ghost" data-act="acctSub" data-sub="pass">${L('Сменить пароль','Change password')}</button>
+  <button class="btn ghost" data-act="acctSub" data-sub="rec">${L('Новый код восстановления','New recovery code')}</button>
+  <button class="btn ghost" data-act="acctSub" data-sub="del">${L('Удалить аккаунт','Delete account')}</button>`;
+}
+function showRecovery(code,next){
+  if(sh){Object.assign(sh,{view:'recovery',code,lock:true,next:next||null,busy:false});paintSheet()}
+  else openSheet({view:'recovery',code,lock:true,next:next||null});
+}
+async function authSubmit(){
+  if(!sh||sh.busy)return;
+  if(sh.view==='acct'){const f={pass:acctPass,rec:acctRec,del:acctDel}[sh.sub];if(f)f();return}
+  if(sh.view==='reset')return doReset();
+  const reg=sh.mode==='register',lg=(sh.lg||'').trim(),pw=sh.pw||'';
+  if(!lg||!pw)return authErr(L('Введите логин и пароль.','Enter a login and password.'));
+  if(reg&&!/^[A-Za-z0-9._-]{3,32}$/.test(lg))return authErr(authMsg({code:'login_invalid'}));
+  if(reg&&pw.length<8)return authErr(authMsg({code:'password_weak'}));
+  const mine=sh;authBusy(true);
+  try{
+    const j=await authApi(reg?'register':'login',{login:lg,password:pw});
+    setSession(j.token,j.login);dropSync();pushResync();
+    if(reg){await initSync();showRecovery(j.recovery,()=>{toast(L('Аккаунт создан. Данные сохраняются в облаке.','Account created. Your data is saved to the cloud.'));if(!S.onboarded)$$('#stage [data-act=authOpen]').forEach(b=>b.remove());else if(nav.tab==='profile'||nav.tab==='home')renderMain({keep:true})})}
+    else await mergeAfterLogin(j);
+  }catch(e){if(sh===mine)authErr(authMsg(e))}
+  finally{if(sh===mine&&sh.view==='auth')authBusy(false)}
+}
+async function doReset(){
+  const lg=(sh.lg||'').trim(),rc=(sh.rc||'').trim(),np=sh.np||'';
+  if(!lg||!rc||!np)return authErr(L('Заполните все поля.','Fill in all fields.'));
+  if(np.length<8)return authErr(authMsg({code:'password_weak'}));
+  const mine=sh;authBusy(true);
+  try{
+    const j=await authApi('reset',{login:lg,recovery:rc,password:np});
+    setSession(j.token,j.login);dropSync();pushResync();
+    showRecovery(j.recovery,()=>mergeAfterLogin(j,true));
+  }catch(e){if(sh===mine)authErr(authMsg(e))}
+  finally{if(sh===mine&&sh.view==='reset')authBusy(false)}
+}
+// После входа: данные аккаунта не перезаписываются молча. Если и в облаке, и на устройстве есть данные, спрашиваем.
+async function mergeAfterLogin(j,noSheet){
+  let d=null,cloud=null;
+  try{d=await cloudGet();cloud=d&&d.json?JSON.parse(d.json):null}catch(e){}
+  const has=!!(cloud&&cloud.onboarded);
+  if(has&&S.onboarded&&d.updatedAt!==S.updatedAt){
+    if(sh)Object.assign(sh,{view:'conflict',cloud,cloudAt:d.updatedAt,lock:false,busy:false});
+    else openSheet({view:'conflict',cloud,cloudAt:d.updatedAt});
+    paintSheet();return;
+  }
+  if(sh)closeSheet(true);
+  if(has)applyRemote(cloud);
+  await initSync();
+  toast(L('Вы вошли как '+j.login,'Signed in as '+j.login));
+  if(S.onboarded&&!sh)renderMain({keep:true});
+}
+async function acctPass(){
+  const cp=sh.cp||'',np=sh.np||'';if(!cp||!np)return authErr(L('Заполните оба поля.','Fill in both fields.'));
+  if(np.length<8)return authErr(authMsg({code:'password_weak'}));
+  const mine=sh;authBusy(true);
+  try{await authApi('password',{current:cp,next:np});toast(L('Пароль изменён','Password changed'));Object.assign(sh,{sub:null,cp:'',np:''});paintSheet()}
+  catch(e){if(sh===mine)authErr(acctMsg(e))}finally{if(sh===mine)authBusy(false)}
+}
+async function acctRec(){
+  const cp=sh.cp||'';if(!cp)return authErr(L('Введите пароль.','Enter your password.'));
+  const mine=sh;authBusy(true);
+  try{const j=await authApi('recovery',{password:cp});sh.cp='';showRecovery(j.recovery,null)}
+  catch(e){if(sh===mine)authErr(acctMsg(e))}finally{if(sh===mine)authBusy(false)}
+}
+async function acctDel(){
+  const cp=sh.cp||'';if(!cp)return authErr(L('Введите пароль.','Enter your password.'));
+  const mine=sh;authBusy(true);
+  try{
+    await authApi('delete',{password:cp});
+    setSession('');dropSync();pushResync();closeSheet(true);
+    toast(L('Аккаунт и облачные данные удалены','Account and cloud data deleted'));
+    if(S.onboarded)renderMain({keep:true});
+  }catch(e){if(sh===mine)authErr(acctMsg(e))}finally{if(sh===mine)authBusy(false)}
+}
 function paintSheet(){
   if(!sh)return;
-  const sig=[sh.view,sh.tab,sh.busy,!!sh.url,!!sh.err].join('|'),swap=sh._sig!==undefined&&sh._sig!==sig;sh._sig=sig;
+  const sig=[sh.view,sh.tab,sh.busy,!!sh.url,!!sh.err,sh.mode,sh.sub].join('|'),swap=sh._sig!==undefined&&sh._sig!==sig;sh._sig=sig;
   paintSheetNow();
   if(!swap)return;
   const B=$('#shBody'),F=$('#shFoot');if(B)B.scrollTop=0;
@@ -1526,6 +1718,11 @@ function paintSheetNow(){
   const v=sh.view;
   if(v==='add'){Tt.textContent=L('Добавить еду','Add food');B.innerHTML=addBody();F.innerHTML=addFoot()}
   else if(v==='result'){Tt.textContent=L('Проверьте запись','Review the entry');B.innerHTML=resultBody();F.innerHTML=`<button class="btn" data-act="saveDraft" ${sh.draft.items.length?'':'disabled'}>${L('Добавить в дневник','Add to diary')}</button>`}
+  else if(v==='auth'){const lb=sh.mode==='register'?L('Создать аккаунт','Create account'):L('Войти','Sign in');Tt.textContent=sh.mode==='register'?L('Новый аккаунт','New account'):L('Вход','Sign in');B.innerHTML=authBody();F.innerHTML=`<button class="btn" id="authGo" data-act="authSubmit" data-label="${lb}">${lb}</button>`}
+  else if(v==='reset'){Tt.textContent=L('Восстановление пароля','Reset password');B.innerHTML=resetBody();F.innerHTML=`<button class="btn" id="authGo" data-act="authSubmit" data-label="${L('Сбросить пароль','Reset password')}">${L('Сбросить пароль','Reset password')}</button>`}
+  else if(v==='recovery'){Tt.textContent=L('Код восстановления','Recovery code');B.innerHTML=recoveryBody();F.innerHTML=`<button class="btn" data-act="rcDone">${L('Я сохранил(а) код','I saved the code')}</button>`}
+  else if(v==='conflict'){Tt.textContent=L('В аккаунте уже есть данные','The account already has data');B.innerHTML=conflictBody();F.innerHTML=''}
+  else if(v==='acct'){Tt.textContent=L('Управление аккаунтом','Manage account');B.innerHTML=acctBody();F.innerHTML=''}
   else if(v==='weight'){Tt.textContent=L('Записать вес','Log weight');B.innerHTML=weightBody();F.innerHTML=`<button class="btn" data-act="saveWeight">${L('Сохранить','Save')}</button>`;$$('input[type=range]',B).forEach(syncRange)}
 }
 function addBody(){
@@ -1576,6 +1773,20 @@ function weightBody(){
 const NUMKEYS=['workouts','sleep','stress','meals','water0'];
 const ACT={
  aiTest(){runAiTest()},
+ authOpen(t){openAuth(t.dataset.mode==='login'?'login':'register')},
+ authMode(t){if(!sh)return;sh.view='auth';sh.mode=t.dataset.mode==='register'?'register':'login';paintSheet()},
+ authReset(){if(!sh)return;sh.view='reset';paintSheet()},
+ authSubmit(){authSubmit()},
+ pwShow(){const i=$('#pwIn'),b=$('#pwTog');if(!i||!sh)return;sh.show=!sh.show;i.type=sh.show?'text':'password';if(b)b.textContent=sh.show?L('Скрыть','Hide'):L('Показать','Show')},
+ rcCopy(){const c=sh&&sh.code;if(!c)return;(navigator.clipboard?navigator.clipboard.writeText(c):Promise.reject()).then(()=>toast(L('Код скопирован','Code copied'))).catch(()=>{const el=$('#rcode');if(el){const r=document.createRange();r.selectNodeContents(el);const g=getSelection();g.removeAllRanges();g.addRange(r)}toast(L('Выделите код и скопируйте вручную','Select the code and copy it manually'))})},
+ rcDone(){const nx=sh&&sh.next;closeSheet(true);if(nx)nx()},
+ useCloud(){const c=sh&&sh.cloud;if(!c)return;closeSheet(true);applyRemote(c);initSync().then(()=>toast(L('Вы вошли как '+getLogin()+'. Данные из аккаунта загружены.','Signed in as '+getLogin()+'. Account data loaded.')))},
+ useLocal(){S.updatedAt=Date.now();lsSave();closeSheet(true);initSync().then(()=>{toast(L('Вы вошли как '+getLogin()+'. Аккаунт обновлён данными с этого устройства.','Signed in as '+getLogin()+'. The account now holds this device’s data.'));if(nav.tab==='profile')renderMain({keep:true})})},
+ acctOpen(){openSheet({view:'acct',sub:null,cp:'',np:''})},
+ acctSub(t){if(!sh)return;sh.sub=t.dataset.sub||null;sh.cp='';sh.np='';paintSheet()},
+ acctPass(){acctPass()},acctRec(){acctRec()},acctDel(){acctDel()},
+ logout(){(async()=>{try{await authApi('logout',{})}catch(e){}setSession('');dropSync();pushResync();toast(L('Вы вышли из аккаунта. Данные остались на этом устройстве.','Signed out. Your data stays on this device.'));if(S.onboarded)renderMain({keep:true});else render()})()},
+ accHintDone(){S.accHintDone=true;save();renderMain({keep:true})},
  savePass(){const v=(($('#passIn')||{}).value||'').trim();try{localStorage.setItem('crumb-pass',v)}catch(e){}toast(L('Код сохранён','Code saved'));SYNC=null;docRef=null;liveWatch=false;initSync();pushInit()},
  lang(t){S.lang=t.dataset.val==='en'?'en':'ru';save();confirmReset=false;if(sh)closeSheet();render()},
  obStart(){ob={step:'welcome'};D=newD();obNext()},
@@ -1671,6 +1882,7 @@ document.addEventListener('click',e=>{
 document.addEventListener('submit',e=>{
   const f=e.target.closest('[data-act-submit]');if(!f)return;e.preventDefault();
   if(f.dataset.actSubmit==='send'){const i=$('#coachIn');sendCoach(i?i.value:'')}
+  else if(f.dataset.actSubmit==='auth')authSubmit();
 });
 document.addEventListener('input',e=>{
   const t=e.target,k=t.dataset&&t.dataset.in;if(!k)return;
@@ -1685,6 +1897,7 @@ document.addEventListener('input',e=>{
   else if(k==='pnote'){sh.note=t.value}
   else if(k==='title'){sh.draft.title=t.value}
   else if(k==='time'){sh.draft.t=t.value}
+  else if(k==='lg'||k==='pw'||k==='rc'||k==='np'||k==='cp'){if(sh){sh[k]=t.value;const er=$('#authErr');if(er)er.hidden=true}}
   else if(k==='coach'){t.style.height='auto';t.style.height=Math.min(110,t.scrollHeight)+'px'}
 });
 document.addEventListener('change',e=>{

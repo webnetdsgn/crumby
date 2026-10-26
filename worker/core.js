@@ -14,6 +14,10 @@
 //   AI_DAILY_LIMIT      лимит на человека с кодом (по умолчанию 80)
 //   OWNER_DAILY_LIMIT   лимит владельца (по умолчанию 500)
 //   GEMINI_MODEL        модель (по умолчанию gemini-3.1-flash-lite)
+//   OWNER_LOGIN         логин(ы) владельца через запятую: у этих аккаунтов лимит владельца (OWNER_DAILY_LIMIT)
+//   ACCOUNT_DAILY_LIMIT ИИ-запросов в сутки на аккаунт (по умолчанию 40)
+//   MAX_ACCOUNTS        потолок числа аккаунтов (по умолчанию 5000), защита хранилища от массовой регистрации
+//   REGISTER_PER_IP_DAY регистраций в сутки с одного IP (по умолчанию 5)
 //   GEMINI_THINKING     "default": не ограничивать «размышления» модели
 //   GEMINI_FALLBACK_MODEL  запасная модель, если основная перегружена (503) или упёрлась в лимит (по умолчанию gemini-3.5-flash-lite, "off" выключает)
 
@@ -22,7 +26,7 @@ export const FALLBACK_DEFAULT = 'gemini-3.5-flash-lite'; // запасная м�
 const MAX_BODY = 6_000_000;
 const MAX_IMAGE_CHARS = 4_500_000;
 const UPSTREAM_TIMEOUT_MS = 28_000;
-const MAX_STATE_CHARS = 300_000;
+const MAX_STATE_CHARS = 900_000; // год записей занимает около 450 КБ
 const MAX_SUBS_PER_USER = 5;
 const SEND_LIMIT_PER_RUN = 40; // бесплатный план: не больше 50 внешних запросов за один запуск
 const GRACE_MIN = 90; // опоздавшее напоминание всё равно уйдёт, но не позже чем через 90 минут
@@ -43,6 +47,37 @@ export const b64u = (bytes) =>
 const num = (v, d) => (Number.isFinite(Number(v)) && Number(v) > 0 ? Number(v) : d);
 const clip = (s, n) => String(s == null ? '' : s).slice(0, n);
 
+/* ---------------- аккаунты: логин и пароль ---------------- */
+
+const PBKDF2_ITER = 100_000; // больше Cloudflare Workers не разрешает
+const DUMMY_SALT = '00112233445566778899aabbccddeeff'; // для выравнивания времени ответа, если логина нет
+const TOKEN_TTL_MS = 180 * 86400000;
+const MAX_TOKENS_PER_USER = 10;
+const LOGIN_FAILS_BEFORE_LOCK = 5;
+const IP_FAILS_PER_HOUR = 30;
+const LOGIN_RE = /^[A-Za-z0-9._-]{3,32}$/;
+const RC_ALPHA = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // 32 знака без 0/O и 1/I
+const COMMON_PW = new Set(['password', 'password1', 'password123', 'passw0rd', 'p@ssw0rd', '12345678', '123456789', '1234567890', '12341234', '87654321', '123123123', '111222333', '11111111', '00000000', 'qwertyui', 'qwerty12', 'qwerty123', 'qwertyuiop', 'asdfghjk', 'asdfghjkl', 'zxcvbnm1', '1q2w3e4r', '1qaz2wsx', 'zaq12wsx', 'qazwsxedc', 'iloveyou', 'abc12345', 'admin123', 'letmein1', 'welcome1', 'monkey123', 'dragon123', 'football', 'baseball', 'sunshine', 'princess', 'superman', 'trustno1', 'changeme', 'whatever', 'starwars', 'computer', 'test1234', 'login123', 'crumb123', 'master123', 'hello123', 'freedom1', 'йцукенгш', 'пароль123', 'пароль12', 'привет123']);
+
+const hexToBytes = (h) => Uint8Array.from(h.match(/../g) || [], (x) => parseInt(x, 16));
+const randHex = (n) => hex(crypto.getRandomValues(new Uint8Array(n)));
+const normRecovery = (s) => String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+function newRecovery() {
+  const b = crypto.getRandomValues(new Uint8Array(16)); // 256 делится на 32, перекоса нет
+  return [...b].map((x) => RC_ALPHA[x % 32]).join('').match(/.{4}/g).join('-');
+}
+export function passwordProblem(pw, login) {
+  const p = String(pw == null ? '' : pw);
+  if (p.length < 8 || p.length > 128) return 'password_weak';
+  const low = p.toLowerCase();
+  if (COMMON_PW.has(low) || low === String(login || '').toLowerCase() || /^(.)\1+$/.test(p)) return 'password_weak';
+  return null;
+}
+async function pbkdf2Hex(password, saltHex, iter) {
+  const key = await crypto.subtle.importKey('raw', enc.encode(String(password).normalize('NFKC')), 'PBKDF2', false, ['deriveBits']);
+  return hex(await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt: hexToBytes(saltHex), iterations: iter }, key, 256));
+}
+
 /* ---------------- доступ ---------------- */
 
 export function codesOf(env) {
@@ -62,6 +97,15 @@ function safeEq(a, b) {
 // Кто обращается: { uid, tier: 'owner' | 'code' | 'open', badCode } или null.
 // Сам код нигде не хранится, только его хэш.
 export async function userOf(req, env) {
+  const tok = req.headers.get('x-crumb-token') || '';
+  if (tok && env.HUB) {
+    try {
+      const s = await hub(env, 'session', { token: tok }, 2500);
+      if (!s.ok) return { invalid: true }; // токен просрочен или отозван: клиент должен войти заново
+      const owners = String(env.OWNER_LOGIN || '').toLowerCase().split(',').map((x) => x.trim()).filter(Boolean);
+      return { uid: s.uid, tier: owners.includes(s.lc) ? 'owner' : 'account', login: s.login, badCode: false };
+    } catch { /* хранилище недоступно: продолжаем как обычный гость */ }
+  }
   const got = req.headers.get('x-crumb-pass') || '';
   let badCode = false;
   if (got) {
@@ -105,15 +149,15 @@ const ipOf = async (req) => {
 // Проверка суточных лимитов. Возвращает { denied } (ответ с ошибкой) или { ticket }, по которому единицу лимита можно вернуть, если Gemini не ответил.
 async function quota(env, req, who) {
   if (!env.HUB) return {};
-  const open = who.tier === 'open';
+  const open = who.tier === 'open', acct = who.tier === 'account', gated = open || acct;
   const limits = {
-    uid: who.tier === 'owner' ? num(env.OWNER_DAILY_LIMIT, 500) : open ? num(env.OPEN_DAILY_LIMIT, 20) : num(env.AI_DAILY_LIMIT, 80),
-    ip: open ? num(env.IP_DAILY_LIMIT, 60) : 0,
-    global: open ? num(env.AI_GLOBAL_LIMIT, 800) : 0,
+    uid: who.tier === 'owner' ? num(env.OWNER_DAILY_LIMIT, 500) : open ? num(env.OPEN_DAILY_LIMIT, 20) : acct ? num(env.ACCOUNT_DAILY_LIMIT, 40) : num(env.AI_DAILY_LIMIT, 80),
+    ip: gated ? num(env.IP_DAILY_LIMIT, 60) : 0,
+    global: gated ? num(env.AI_GLOBAL_LIMIT, 800) : 0,
   };
   try {
-    const ip = open ? await ipOf(req) : '';
-    const r = await hub(env, 'use', { uid: who.uid, ip, limits }, 2500);
+    const ip = gated ? await ipOf(req) : '';
+    const r = await hub(env, 'use', { uid: who.uid, ip: gated ? ip : '', limits }, 2500);
     if (!r.ok) return { denied: json({ error: r.reason, limit: r.limit }, 429) };
     return { ticket: { uid: who.uid, ip } };
   } catch { return {}; /* хранилище недоступно или отвечает слишком долго: не блокируем ИИ */ }
@@ -136,6 +180,7 @@ export async function handleFetch(req, env) {
       ai: Boolean(env.GEMINI_API_KEY && (openOn(env) || codesOf(env).length)),
       open: openOn(env),
       push: Boolean(env.HUB),
+      accounts: Boolean(env.HUB),
       limit: num(env.OPEN_DAILY_LIMIT, 20),
     });
   }
@@ -155,7 +200,10 @@ export async function handleFetch(req, env) {
     try { return json(await hub(env, 'message', { sid })); } catch { return json({ title: 'Crumb', body: '' }); }
   }
 
+  if (p.startsWith('/api/auth/')) return authRoute(req, env, p.slice('/api/auth/'.length));
+
   const who = await userOf(req, env);
+  if (who && who.invalid) return json({ error: 'bad_token' }, 401);
   if (!who) return json({ error: 'bad_pass' }, 401);
 
   // единственный путь ИИ для всех: правила оценки хранятся на сервере, а не берутся от клиента
@@ -167,7 +215,7 @@ export async function handleFetch(req, env) {
   // прямой доступ к модели с произвольным текстом: только по личному коду
   if (p === '/api/gemini') {
     if (req.method !== 'POST') return json({ error: 'method' }, 405);
-    if (who.tier === 'open') return json({ error: 'bad_pass' }, 401);
+    if (who.tier === 'open' || who.tier === 'account') return json({ error: 'bad_pass' }, 401);
     if (!env.GEMINI_API_KEY) return json({ error: 'no_key' }, 500);
     return rawGemini(req, env, who);
   }
@@ -210,6 +258,46 @@ export async function handleFetch(req, env) {
     return json({ error: 'storage' }, 502);
   }
   return json({ error: 'not_found' }, 404);
+}
+
+const AUTH_ERR = { bad_credentials: 401, bad_recovery: 401, bad_token: 401, locked: 429, limit_ip: 429, limit_register: 429, login_taken: 409, login_invalid: 400, password_weak: 400, closed: 503 };
+
+// Регистрация, вход, выход, смена пароля. Пароль хешируется внутри Durable Object: обычный Worker на бесплатном плане
+// получает 10 мс процессора на запрос, а PBKDF2 на 100 000 кругов дольше.
+async function authRoute(req, env, name) {
+  const POST = ['register', 'login', 'logout', 'password', 'reset', 'recovery', 'delete'];
+  if (name !== 'me' && !POST.includes(name)) return json({ error: 'not_found' }, 404);
+  if (req.method !== (name === 'me' ? 'GET' : 'POST')) return json({ error: 'method' }, 405);
+  if (!env.HUB) return json({ error: 'no_storage' }, 503);
+  let b = {};
+  if (req.method === 'POST') {
+    if (Number(req.headers.get('content-length') || 0) > 4000) return json({ error: 'too_large' }, 413);
+    try { const raw = await req.text(); b = raw.trim() ? JSON.parse(raw) || {} : {}; } catch { return json({ error: 'bad_json' }, 400); }
+  }
+  const str = (v, n) => (typeof v === 'string' ? v.slice(0, n) : '');
+  const tok = req.headers.get('x-crumb-token') || '';
+  const out = (r) => {
+    if (r && r.error) return json(r, AUTH_ERR[r.error] || 400);
+    return json(r);
+  };
+  try {
+    const ip = await ipOf(req);
+    if (name === 'register') {
+      return out(await hub(env, 'register', { login: str(b.login, 64), password: str(b.password, 256), ip, maxAccounts: num(env.MAX_ACCOUNTS, 5000), perIp: num(env.REGISTER_PER_IP_DAY, 5) }, 20000));
+    }
+    if (name === 'login') return out(await hub(env, 'login', { login: str(b.login, 64), password: str(b.password, 256), ip }, 20000));
+    if (name === 'reset') return out(await hub(env, 'reset', { login: str(b.login, 64), recovery: str(b.recovery, 64), password: str(b.password, 256), ip }, 20000));
+
+    const s = await hub(env, 'session', { token: tok }, 2500);
+    if (!s.ok) return json({ error: 'bad_token' }, 401);
+    if (name === 'me') return json({ login: s.login });
+    if (name === 'logout') return out(await hub(env, 'logout', { token: tok }));
+    if (name === 'password') return out(await hub(env, 'password', { uid: s.uid, token: tok, current: str(b.current, 256), next: str(b.next, 256), ip }, 20000));
+    if (name === 'recovery') return out(await hub(env, 'recovery_new', { uid: s.uid, password: str(b.password, 256), ip }, 20000));
+    return out(await hub(env, 'delete', { uid: s.uid, password: str(b.password, 256), ip }, 20000));
+  } catch {
+    return json({ error: 'storage' }, 502);
+  }
 }
 
 export async function handleScheduled(env) {
@@ -557,6 +645,195 @@ export class HubCore {
     return { ok: true };
   }
 
+  /* --- аккаунты --- */
+
+  hourKey() { return new Date(this.now()).toISOString().slice(0, 13); }
+
+  async lockState(k) { const raw = await this.store.get(k); return raw ? JSON.parse(raw) : { n: 0, lv: 0, until: 0, t: 0 }; }
+
+  // Пять неудач подряд блокируют проверку на 15 минут, повторные серии вдвое дольше, но не больше 6 часов.
+  async lockFail(k) {
+    const now = this.now();
+    const r = await this.lockState(k);
+    if (r.t && now - r.t > 86400000) { r.n = 0; r.lv = 0; }
+    r.n++; r.t = now;
+    if (r.n >= LOGIN_FAILS_BEFORE_LOCK) { r.until = now + Math.min(6 * 3600000, 15 * 60000 * 2 ** r.lv); r.lv++; r.n = 0; }
+    await this.store.put(k, JSON.stringify(r));
+  }
+
+  async accountOf(lc) {
+    const raw = await this.store.get('a:' + lc);
+    if (!raw) return null;
+    const a = JSON.parse(raw);
+    return a.pending ? null : a;
+  }
+
+  async accountByUid(uid) {
+    const lc = await this.store.get('ac:' + uid);
+    return lc ? { lc, acc: await this.accountOf(lc) } : { lc: '', acc: null };
+  }
+
+  // Проверка пароля: одинаковая работа и для несуществующего логина, чтобы нельзя было узнать, занят ли он по времени ответа.
+  async checkLogin(lc, password, ip, lockKey = 'lf:') {
+    const now = this.now();
+    const ipk = ip ? `lfi:${ip}:${this.hourKey()}` : null;
+    if (ipk && Number((await this.store.get(ipk)) || 0) >= IP_FAILS_PER_HOUR) return { error: 'limit_ip' };
+    const ls = await this.lockState(lockKey + lc);
+    if (ls.until > now) return { error: 'locked', retryMin: Math.ceil((ls.until - now) / 60000) };
+    const acc = LOGIN_RE.test(lc) ? await this.accountOf(lc) : null;
+    const h = await pbkdf2Hex(password, acc ? acc.salt : DUMMY_SALT, acc ? acc.iter : PBKDF2_ITER);
+    if (acc && safeEq(h, acc.hash)) { await this.store.del(lockKey + lc); return { acc }; }
+    await this.lockFail(lockKey + lc);
+    if (ipk) await this.store.put(ipk, String(Number((await this.store.get(ipk)) || 0) + 1));
+    return { error: 'bad_credentials' };
+  }
+
+  async mintToken(uid) {
+    const token = b64u(crypto.getRandomValues(new Uint8Array(32)));
+    const h = await sha256hex(token);
+    const now = this.now();
+    await this.store.put('t:' + h, JSON.stringify({ u: uid, c: now, l: now }));
+    await this.store.put(`ut:${uid}:${h}`, '1');
+    const mine = await this.store.list(`ut:${uid}:`);
+    if (mine.length > MAX_TOKENS_PER_USER) {
+      const recs = [];
+      for (const [k] of mine) { const hh = k.split(':').pop(); if (hh === h) continue; const raw = await this.store.get('t:' + hh); recs.push({ hh, c: raw ? JSON.parse(raw).c : 0 }); } // только что выданный токен не трогаем
+      recs.sort((a, b) => a.c - b.c || (a.hh < b.hh ? -1 : 1));
+      for (const r of recs.slice(0, recs.length + 1 - MAX_TOKENS_PER_USER)) { await this.store.del('t:' + r.hh); await this.store.del(`ut:${uid}:${r.hh}`); }
+    }
+    return token;
+  }
+
+  async revokeTokens(uid, keepHash = '') {
+    for (const [k] of await this.store.list(`ut:${uid}:`)) {
+      const h = k.split(':').pop();
+      if (h === keepHash) continue;
+      await this.store.del('t:' + h);
+      await this.store.del(k);
+    }
+  }
+
+  async makeRecovery() {
+    const code = newRecovery(), s = randHex(16);
+    return { code, rec: { s, h: await sha256hex(s + normRecovery(code)) } };
+  }
+
+  async op_register({ login, password, ip, maxAccounts, perIp }) {
+    const lg = String(login || '').trim(), lc = lg.toLowerCase();
+    if (!LOGIN_RE.test(lg)) return { error: 'login_invalid' };
+    if (passwordProblem(password, lc)) return { error: 'password_weak' };
+    const rk = ip ? `r:${ip}:${this.day()}` : null;
+    if (rk && Number((await this.store.get(rk)) || 0) >= (perIp || 5)) return { error: 'limit_register' };
+    const total = Number((await this.store.get('meta:accounts')) || 0);
+    if (total >= (maxAccounts || 5000)) return { error: 'closed' };
+    if (await this.store.get('a:' + lc)) return { error: 'login_taken' };
+    await this.store.put('a:' + lc, JSON.stringify({ pending: true })); // занимаем логин до долгого хеширования
+    try {
+      const uid = 'm' + randHex(8), salt = randHex(16);
+      const { code, rec } = await this.makeRecovery();
+      const acc = { uid, login: lg, salt, hash: await pbkdf2Hex(password, salt, PBKDF2_ITER), iter: PBKDF2_ITER, rec, created: this.now() };
+      await this.store.put('a:' + lc, JSON.stringify(acc));
+      await this.store.put('ac:' + uid, lc);
+      await this.store.put('meta:accounts', String(total + 1));
+      if (rk) await this.store.put(rk, String(Number((await this.store.get(rk)) || 0) + 1));
+      return { ok: true, token: await this.mintToken(uid), login: lg, recovery: code };
+    } catch (e) {
+      await this.store.del('a:' + lc);
+      throw e;
+    }
+  }
+
+  async op_login({ login, password, ip }) {
+    const lc = String(login || '').trim().toLowerCase();
+    const r = await this.checkLogin(lc, String(password || ''), ip);
+    if (r.error) return r;
+    return { ok: true, token: await this.mintToken(r.acc.uid), login: r.acc.login };
+  }
+
+  async op_session({ token }) {
+    const h = await sha256hex(String(token || ''));
+    const raw = await this.store.get('t:' + h);
+    if (!raw) return { ok: false };
+    const rec = JSON.parse(raw), now = this.now();
+    const { lc, acc } = await this.accountByUid(rec.u);
+    if (now - rec.l > TOKEN_TTL_MS || !acc) {
+      await this.store.del('t:' + h);
+      await this.store.del(`ut:${rec.u}:${h}`);
+      return { ok: false };
+    }
+    if (now - rec.l > 86400000) { rec.l = now; await this.store.put('t:' + h, JSON.stringify(rec)); } // не пишем в хранилище на каждый запрос
+    return { ok: true, uid: rec.u, login: acc.login, lc };
+  }
+
+  async op_logout({ token }) {
+    const h = await sha256hex(String(token || ''));
+    const raw = await this.store.get('t:' + h);
+    if (raw) { await this.store.del('t:' + h); await this.store.del(`ut:${JSON.parse(raw).u}:${h}`); }
+    return { ok: true };
+  }
+
+  async op_password({ uid, token, current, next, ip }) {
+    const { lc } = await this.accountByUid(uid);
+    const r = await this.checkLogin(lc, String(current || ''), ip);
+    if (r.error) return r;
+    if (passwordProblem(next, lc)) return { error: 'password_weak' };
+    const acc = r.acc, salt = randHex(16);
+    acc.salt = salt; acc.hash = await pbkdf2Hex(next, salt, PBKDF2_ITER); acc.iter = PBKDF2_ITER;
+    await this.store.put('a:' + lc, JSON.stringify(acc));
+    await this.revokeTokens(uid, await sha256hex(String(token || ''))); // на других устройствах придётся войти заново
+    return { ok: true };
+  }
+
+  async op_recovery_new({ uid, password, ip }) {
+    const { lc } = await this.accountByUid(uid);
+    const r = await this.checkLogin(lc, String(password || ''), ip);
+    if (r.error) return r;
+    const { code, rec } = await this.makeRecovery();
+    r.acc.rec = rec;
+    await this.store.put('a:' + lc, JSON.stringify(r.acc));
+    return { ok: true, recovery: code };
+  }
+
+  // Сброс пароля по коду восстановления (пока нет почты). Код сгорает: после сброса выдаётся новый.
+  async op_reset({ login, recovery, password, ip }) {
+    const lc = String(login || '').trim().toLowerCase(), now = this.now();
+    const ipk = ip ? `lfi:${ip}:${this.hourKey()}` : null;
+    if (ipk && Number((await this.store.get(ipk)) || 0) >= IP_FAILS_PER_HOUR) return { error: 'limit_ip' };
+    const ls = await this.lockState('lr:' + lc);
+    if (ls.until > now) return { error: 'locked', retryMin: Math.ceil((ls.until - now) / 60000) };
+    const acc = LOGIN_RE.test(lc) ? await this.accountOf(lc) : null;
+    const h = await sha256hex((acc ? acc.rec.s : DUMMY_SALT) + normRecovery(recovery));
+    if (!acc || !safeEq(h, acc.rec.h)) {
+      await this.lockFail('lr:' + lc);
+      if (ipk) await this.store.put(ipk, String(Number((await this.store.get(ipk)) || 0) + 1));
+      return { error: 'bad_recovery' };
+    }
+    if (passwordProblem(password, lc)) return { error: 'password_weak' };
+    const salt = randHex(16), { code, rec } = await this.makeRecovery();
+    acc.salt = salt; acc.hash = await pbkdf2Hex(password, salt, PBKDF2_ITER); acc.iter = PBKDF2_ITER; acc.rec = rec;
+    await this.store.put('a:' + lc, JSON.stringify(acc));
+    await this.revokeTokens(acc.uid);
+    await this.store.del('lr:' + lc);
+    await this.store.del('lf:' + lc);
+    return { ok: true, token: await this.mintToken(acc.uid), login: acc.login, recovery: code };
+  }
+
+  // Удаление аккаунта: учётная запись, облачные данные, сессии и подписки на уведомления.
+  async op_delete({ uid, password, ip }) {
+    const { lc } = await this.accountByUid(uid);
+    const r = await this.checkLogin(lc, String(password || ''), ip);
+    if (r.error) return r;
+    await this.revokeTokens(uid);
+    await this.store.del('s:' + uid);
+    for (const sub of await this.subs()) if (sub.uid === uid) await this.store.del('p:' + sub.sid);
+    await this.store.del('a:' + lc);
+    await this.store.del('ac:' + uid);
+    await this.store.del('lf:' + lc);
+    const total = Number((await this.store.get('meta:accounts')) || 0);
+    await this.store.put('meta:accounts', String(Math.max(0, total - 1)));
+    return { ok: true };
+  }
+
   vapid() {
     if (!this._vapid) {
       this._vapid = (async () => {
@@ -661,8 +938,16 @@ export class HubCore {
       sent++;
     }
     // старые счётчики запросов не нужны (последний сегмент ключа всегда дата)
-    for (const prefix of ['u:', 'i:', 'g:', 'c:']) {
+    for (const prefix of ['u:', 'i:', 'g:', 'c:', 'r:', 'lfi:']) {
       for (const [k] of await this.store.list(prefix)) if (k.split(':').pop() < cutoff) await this.store.del(k);
+    }
+    // давние записи о неудачных входах и просроченные сессии
+    for (const prefix of ['lf:', 'lr:']) {
+      for (const [k, v] of await this.store.list(prefix)) { const r = JSON.parse(v); if ((r.t || 0) < now - 86400000 && (r.until || 0) < now) await this.store.del(k); }
+    }
+    for (const [k, v] of await this.store.list('t:')) {
+      const r = JSON.parse(v);
+      if (now - r.l > TOKEN_TTL_MS) { await this.store.del(k); await this.store.del(`ut:${r.u}:${k.slice(2)}`); }
     }
     return { checked: recs.length, sent };
   }
