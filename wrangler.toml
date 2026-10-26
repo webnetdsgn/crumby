@@ -1,4 +1,5 @@
-# Crumb: одна точка деплоя. Worker отдаёт приложение из ./app и проксирует /api/gemini.
+# Crumb: одна точка деплоя. Worker отдаёт приложение из ./app, проксирует /api/gemini,
+# хранит данные людей и рассылает напоминания.
 name = "crumby"
 main = "worker/index.js"
 compatibility_date = "2025-09-01"
@@ -8,7 +9,21 @@ directory = "./app"
 binding = "ASSETS"
 run_worker_first = ["/api/*"]
 
+# Хранилище создаётся автоматически при деплое, вручную ничего заводить не нужно.
+[[durable_objects.bindings]]
+name = "HUB"
+class_name = "Hub"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Hub"]
+
+# Раз в 15 минут проверяем, кому пора отправить напоминание.
+[triggers]
+crons = ["*/15 * * * *"]
+
 # Секреты не хранятся в репозитории. Задаются в панели Cloudflare:
 #   GEMINI_API_KEY  ключ Gemini API
-#   APP_PASSCODE    код доступа, который вводится в приложении
-# Необязательная переменная GEMINI_MODEL меняет модель без правки кода.
+#   APP_PASSCODE    код доступа владельца
+#   APP_PASSCODES   (необязательно) коды для друзей через запятую, по одному на человека
+# Необязательные переменные: GEMINI_MODEL, GEMINI_THINKING, AI_DAILY_LIMIT.

@@ -1,10 +1,13 @@
 {
+  "id": "/",
   "name": "Crumb",
   "short_name": "Crumb",
   "description": "AI calorie tracker for tiny snacks",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
+  "orientation": "portrait",
+  "categories": ["health", "fitness", "lifestyle"],
   "background_color": "#D97757",
   "theme_color": "#D97757",
   "icons": [

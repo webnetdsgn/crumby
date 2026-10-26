@@ -514,39 +514,54 @@ const dm=d=>en()?T(MG[d.getMonth()])+' '+d.getDate():d.getDate()+' '+MG[d.getMon
 const fmtDate=d=>en()?T(MG[d.getMonth()])+' '+d.getDate()+', '+d.getFullYear():d.getDate()+' '+MG[d.getMonth()][0]+' '+d.getFullYear();
 const plDays=n=>en()?(n===1?'day':'days'):(n%10===1&&n%100!==11?'день':(n%10>=2&&n%10<=4&&(n%100<10||n%100>=20))?'дня':'дней');
 
-/* ---------- cloud sync (db capability; falls back to local only) ---------- */
-let docRef=null,syncOn=false,syncAt=0,pushT=null;
+/* ---------- cloud sync: хранилище claude.ai внутри Claude, свой сервер во всех остальных случаях ---------- */
+let SYNC=null,syncOn=false,syncAt=0,pushT=null,docRef=null,liveWatch=false;
 function lsSave(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
-function save(){S.updatedAt=Date.now();lsSave();clearTimeout(pushT);if(docRef)pushT=setTimeout(push,1200)}
+function save(){S.updatedAt=Date.now();lsSave();clearTimeout(pushT);if(SYNC)pushT=setTimeout(push,1200)}
 async function push(){
-  if(!docRef)return;
-  try{await docRef.set({json:JSON.stringify(Object.assign({},S,{chat:S.chat.slice(-20)})),updatedAt:S.updatedAt});syncAt=Date.now();if(S.onboarded&&nav.tab==='profile'&&!sh)renderMain({keep:true})}catch(e){}
+  if(!SYNC)return;
+  try{await SYNC.set({json:JSON.stringify(Object.assign({},S,{chat:S.chat.slice(-20)})),updatedAt:S.updatedAt});syncAt=Date.now();if(S.onboarded&&nav.tab==='profile'&&!sh)renderMain({keep:true})}catch(e){}
 }
 function applyRemote(r){
   const th=S.theme;S=Object.assign(blank(),r);if(S.theme!=='night')S.theme=th;lsSave();
   if(!sh){applyTheme();document.documentElement.lang=S.lang;render()}
 }
-async function initSync(){
-  try{
-    const c=window.claude;if(!c||!c.use)return;
-    const DB=await c.use('db'),user=await c.use('user');
-    if(!DB||!user)return;
-    const id=await user.id();if(!id)return;
-    docRef=DB.doc('data/users/'+id+'/crumb');
-    const snap=await docRef.get();
-    if(snap.exists){
-      const d=snap.data()||{};
-      if((d.updatedAt||0)>(S.updatedAt||0)){try{applyRemote(JSON.parse(d.json))}catch(e){}}
-      else if(S.onboarded)await push();
-    }else if(S.onboarded)await push();
-    syncOn=true;syncAt=Date.now();
-    docRef.onSnapshot(s=>{
-      if(!s.exists)return;const d=s.data()||{};
-      if((d.updatedAt||0)>(S.updatedAt||0)+1){try{applyRemote(JSON.parse(d.json))}catch(e){}}
-    },()=>{});
-    if(S.onboarded&&nav.tab==='profile'&&!sh)renderMain({keep:true});
-  }catch(e){syncOn=false;docRef=null}
+async function reconcile(){
+  const d=await SYNC.get();
+  if(d&&d.json){
+    if((d.updatedAt||0)>(S.updatedAt||0)){try{applyRemote(JSON.parse(d.json))}catch(e){}}
+    else if(S.onboarded&&(S.updatedAt||0)>(d.updatedAt||0))await push();
+  }else if(S.onboarded)await push();
 }
+async function initSync(){
+  if(SYNC)return;
+  try{
+    const c=window.claude;
+    if(c&&c.use){
+      const DB=await c.use('db'),user=await c.use('user');
+      if(!DB||!user)return;
+      const id=await user.id();if(!id)return;
+      docRef=DB.doc('data/users/'+id+'/crumb');
+      SYNC={get:async()=>{const s=await docRef.get();return s.exists?s.data():null},set:o=>docRef.set(o)};
+      await reconcile();
+      docRef.onSnapshot(s=>{
+        if(!s.exists)return;const d=s.data()||{};
+        if((d.updatedAt||0)>(S.updatedAt||0)+1){try{applyRemote(JSON.parse(d.json))}catch(e){}}
+      },()=>{});
+      liveWatch=true;
+    }else if(BACKEND&&getPass()){
+      SYNC={
+        get:async()=>{const r=await fetch('/api/state',{headers:authHeaders(),cache:'no-store'});if(!r.ok)throw new Error('state '+r.status);const j=await r.json();return j.exists?{json:j.json,updatedAt:j.updatedAt}:null},
+        set:async o=>{const r=await fetch('/api/state',{method:'PUT',headers:authHeaders(),body:JSON.stringify(o)});if(!r.ok)throw new Error('state '+r.status)}
+      };
+      await reconcile();
+    }else return;
+    syncOn=true;syncAt=Date.now();
+    if(S.onboarded&&nav.tab==='profile'&&!sh)renderMain({keep:true});
+  }catch(e){syncOn=false;SYNC=null;docRef=null;liveWatch=false}
+}
+// вернулись в приложение (например, с другого устройства): подтягиваем свежие данные
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&SYNC&&!liveWatch)reconcile().catch(()=>{})});
 
 const IC={
  home:'<path d="M3 11l9-7.5L21 11v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>',
@@ -734,7 +749,7 @@ async function initBackend(){
   try{
     SAMPLE=(await (window.claude&&window.claude.use?window.claude.use('sample'):null))||null;
     if(SAMPLE){const l=await SAMPLE.limits().catch(()=>null);if(l&&l.images){SAMPLE_IMG=true;IMG_TYPES=l.images.mediaTypes.join(',')}}
-    if(!SAMPLE)await initBackend();
+    if(!SAMPLE){await initBackend();if(BACKEND){initSync();pushInit();if(!S.onboarded&&ob&&ob.step==='welcome')render()}}
     if(S.onboarded&&(nav.tab==='coach'||nav.tab==='profile')&&!sh)renderMain({keep:true});
   }catch(e){SAMPLE=null}
 })();
@@ -752,7 +767,8 @@ const aiErr=c=>({
   bad_pass:L('Неверный или не введён код доступа. Введите его в профиле.','Wrong or missing access code. Enter it in Profile.'),
   no_key:L('На сервере не задан ключ Gemini.','The server has no Gemini key set.'),
   timeout:L('Gemini отвечает слишком долго. Попробуйте ещё раз.','Gemini is taking too long. Try again.'),
-  too_large:L('Фото слишком большое. Попробуйте другое или снимите ближе.','The photo is too large. Try another one or shoot closer.')
+  too_large:L('Фото слишком большое. Попробуйте другое или снимите ближе.','The photo is too large. Try another one or shoot closer.'),
+  limit_day:L('Дневной лимит ИИ-запросов исчерпан. Продолжим завтра.','The daily AI limit is used up. Back tomorrow.')
 })[c];
 const foodRules=()=>`You are a nutritionist inside a calorie-tracking app. Estimate the meal and reply with ONLY JSON, no prose, no markdown:
 {"title":"short name","items":[{"name":"food or dish","grams":number,"kcal":number,"p":number,"f":number,"c":number,"sugar":number,"fiber":number}],"confidence":number from 0 to 1,"note":"one short sentence: what is not obvious or what you assumed","questions":[{"q":"short question","options":["answer","answer"]}]}
@@ -789,10 +805,10 @@ async function prepImage(file){
   try{
     const im=await loadImg(file),w0=im.naturalWidth,h0=im.naturalHeight;
     if(w0&&h0){
-      const sc=Math.min(1,1280/Math.max(w0,h0)),c=document.createElement('canvas');
+      const sc=Math.min(1,1024/Math.max(w0,h0)),c=document.createElement('canvas');
       c.width=Math.max(1,Math.round(w0*sc));c.height=Math.max(1,Math.round(h0*sc));
       c.getContext('2d').drawImage(im,0,0,c.width,c.height);
-      const blob=await new Promise(res=>c.toBlob(b=>res(b),'image/jpeg',.85));
+      const blob=await new Promise(res=>c.toBlob(b=>res(b),'image/jpeg',.8));
       if(blob&&blob.size>0)out=blob;
     }
   }catch(e){}
@@ -807,7 +823,7 @@ function parseJSON(t){
   throw{code:'invalid_json'};
 }
 const errDetail=(status,j)=>[j&&j.status?'Gemini '+j.status:(status?'HTTP '+status:''),j&&j.finish?'finish '+j.finish:'',j&&j.detail?String(j.detail).slice(0,160):''].filter(Boolean).join(' · ');
-const errCode=(status,j)=>j&&j.error==='too_large'?'too_large':j&&j.error==='bad_pass'?'bad_pass':(status===429||(j&&j.error==='rate_limited'))?'rate_limited':j&&j.error==='no_key'?'no_key':(j&&j.error==='timeout')?'timeout':j&&j.error==='empty'?'refused':'upstream_error';
+const errCode=(status,j)=>j&&j.error==='limit_day'?'limit_day':j&&j.error==='too_large'?'too_large':j&&j.error==='bad_pass'?'bad_pass':(status===429||(j&&j.error==='rate_limited'))?'rate_limited':j&&j.error==='no_key'?'no_key':(j&&j.error==='timeout')?'timeout':j&&j.error==='empty'?'refused':'upstream_error';
 async function gem({system,messages,image,json,signal,maxTokens,timeoutMs=45000}){
   const t0=performance.now();
   const ctl=new AbortController();let timedOut=false;
@@ -884,6 +900,65 @@ async function runAiTest(){
     return f.title+' · '+nf(sumItems(f.items).kcal)+' kcal';
   });
   lines.push(lines.some(l=>l[0]==='✗')?L('Есть ошибка: пришлите этот экран.','There is an error: send this screen.'):L('Всё работает.','All good.'));show();
+}
+/* ---------- уведомления (Web Push) ---------- */
+const PUSH={cfg:null,supported:false,sub:false,perm:'default',busy:false,err:''};
+const isIOS=()=>/iPad|iPhone|iPod/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
+const isStandalone=()=>navigator.standalone===true||(window.matchMedia&&matchMedia('(display-mode: standalone)').matches);
+const authHeaders=()=>({'content-type':'application/json','x-crumb-pass':getPass()});
+const b64uBytes=s=>{const p='='.repeat((4-s.length%4)%4),b=atob((s+p).replace(/-/g,'+').replace(/_/g,'/'));return Uint8Array.from(b,c=>c.charCodeAt(0))};
+const withTimeout=(p,ms)=>Promise.race([p,new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),ms))]);
+async function setMeta(k,v){try{const c=await caches.open('crumb-meta');await c.put('/__'+k,new Response(String(v)))}catch(e){}}
+async function pushSync(sub){
+  const body={subscription:sub.toJSON?sub.toJSON():{endpoint:sub.endpoint},tz:(Intl.DateTimeFormat().resolvedOptions().timeZone)||'UTC',lang:S.lang,prefs:S.rem};
+  const r=await fetch('/api/push/subscribe',{method:'POST',headers:authHeaders(),body:JSON.stringify(body)});
+  if(!r.ok)throw new Error('subscribe '+r.status);
+  const j=await r.json();await setMeta('sid',j.sid);return j;
+}
+async function pushInit(){
+  PUSH.supported='serviceWorker' in navigator&&'PushManager' in window&&'Notification' in window;
+  try{const r=await fetch('/api/push/config',{cache:'no-store'});PUSH.cfg=await r.json()}catch(e){PUSH.cfg={enabled:false}}
+  if(PUSH.supported&&PUSH.cfg&&PUSH.cfg.enabled){
+    PUSH.perm=Notification.permission;
+    try{
+      const reg=await withTimeout(navigator.serviceWorker.ready,4000),s=await reg.pushManager.getSubscription();
+      PUSH.sub=!!s&&PUSH.perm==='granted';
+      if(PUSH.sub&&getPass())pushSync(s).catch(()=>{});
+    }catch(e){}
+  }
+  if(S.onboarded&&nav.tab==='profile'&&!sh)renderMain({keep:true});
+}
+async function pushOn(){
+  if(PUSH.busy)return;
+  PUSH.busy=true;PUSH.err='';
+  try{
+    if(!getPass())throw new Error(L('Сначала введите код доступа выше и нажмите «Сохранить».','Enter the access code above and tap Save first.'));
+    const perm=await Notification.requestPermission(); // вызывается прямо из касания, иначе iPhone откажет
+    PUSH.perm=perm;
+    if(perm!=='granted')throw new Error(L('Разрешение не выдано. Разрешите уведомления для Crumb в настройках iPhone.','Permission wasn’t granted. Allow notifications for Crumb in iPhone Settings.'));
+    const reg=await withTimeout(navigator.serviceWorker.ready,6000);
+    let sub=await reg.pushManager.getSubscription();
+    if(!sub)sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:b64uBytes(PUSH.cfg.publicKey)});
+    await pushSync(sub);
+    PUSH.sub=true;toast(L('Уведомления включены','Notifications are on'));
+  }catch(e){PUSH.err=String((e&&e.message)||e)}
+  PUSH.busy=false;if(nav.tab==='profile'&&!sh)renderMain({keep:true});
+}
+async function pushOff(){
+  try{
+    const reg=await withTimeout(navigator.serviceWorker.ready,4000),s=await reg.pushManager.getSubscription();
+    if(s){await fetch('/api/push/unsubscribe',{method:'POST',headers:authHeaders(),body:JSON.stringify({endpoint:s.endpoint})}).catch(()=>{});await s.unsubscribe()}
+  }catch(e){}
+  PUSH.sub=false;toast(L('Уведомления выключены','Notifications are off'));if(nav.tab==='profile'&&!sh)renderMain({keep:true});
+}
+async function pushTest(){
+  try{
+    const r=await fetch('/api/push/test',{method:'POST',headers:authHeaders(),body:'{}'});
+    const j=await r.json();if(!r.ok)throw new Error('test');
+    if(!j.count)toast(L('Подписок нет: выключите и включите уведомления','No subscriptions: turn notifications off and on'));
+    else if(j.results.some(x=>x.status>=200&&x.status<300))toast(L('Отправлено: придёт через несколько секунд','Sent: it should arrive in a few seconds'));
+    else toast(L('Сервис уведомлений ответил ошибкой ','The push service returned an error ')+j.results.map(x=>x.status).join(','));
+  }catch(e){toast(L('Не получилось отправить тест','Couldn’t send the test'))}
 }
 const ctxLine=()=>{const p=S.profile;return p&&p.diet&&p.diet.length&&!p.diet.includes('none')?`\nUser dietary restrictions: ${labs('diet',p.diet)}.`:''};
 async function askFood(kind){
@@ -1043,7 +1118,7 @@ const vWelcome=()=>`<div class="welcome stag">
   <li><span class="bi">${ico('cookie',18)}</span><span>${L('<b>Перекусы на виду.</b> Видно, сколько калорий дают мелочи за день и за неделю.','<b>Snacks in plain sight.</b> See how many calories the small stuff adds per day and per week.')}</span></li>
   <li><span class="bi">${ico('target',18)}</span><span>${L('<b>План под вас.</b> Калории, белок и вода по 11 вопросам, с безопасным темпом.','<b>A plan built for you.</b> Calories, protein and water from 11 questions, at a safe pace.')}</span></li>
  </ul>
- <div style="--i:4;margin-top:auto;display:flex;flex-direction:column;gap:10px"><button class="btn" data-act="obStart">${L('Составить мой план','Build my plan')}</button><button class="btn ghost" data-act="obDemo">${L('Посмотреть пример с данными','See an example with data')}</button><p class="sub" style="font-size:12.5px;text-align:center">${L('Концепт-версия. Данные видны только вам.','Concept build. Your data is visible only to you.')}</p></div></div>`;
+ <div style="--i:4;margin-top:auto;display:flex;flex-direction:column;gap:10px">${BACKEND?`<div class="fix"><input id="passIn" type="password" autocomplete="off" value="${esc(getPass())}" placeholder="${L('Код доступа (если вам его дали)','Access code (if you were given one)')}" aria-label="${L('Код доступа','Access code')}"><button class="btn sm" data-act="savePass">${L('Войти','Enter')}</button></div>`:''}<button class="btn" data-act="obStart">${L('Составить мой план','Build my plan')}</button><button class="btn ghost" data-act="obDemo">${L('Посмотреть пример с данными','See an example with data')}</button><p class="sub" style="font-size:12.5px;text-align:center">${L('Концепт-версия. Данные видны только вам.','Concept build. Your data is visible only to you.')}</p></div></div>`;
 const AN=[['Считаю базовый обмен веществ','Calculating your base metabolism'],['Учитываю работу, тренировки и сон','Factoring in work, workouts and sleep'],['Подбираю безопасный темп к цели','Choosing a safe pace to your goal'],['Раскладываю калории по приёмам и перекусам','Splitting calories across meals and snacks'],['Считаю норму воды','Calculating your water target']];
 const vAnalysis=()=>`<div class="an"><div>${logo(44)}</div><div><h2 class="h1">${L('Собираю ваш план','Building your plan')}</h2><p class="sub" style="margin-top:6px">${L('Это займёт несколько секунд.','This takes a few seconds.')}</p></div><div class="an-list">${AN.map((t,i)=>`<div class="an-item" id="an${i}"><span class="an-dot">${ico('check',13)}</span><span>${T(t)}</span></div>`).join('')}</div></div>`;
 async function runAnalysis(){
@@ -1116,7 +1191,9 @@ function vHome(ani){
   const tape=ents.map(e=>`<i class="${e.type==='snack'?'sn':'ml'}" style="width:${Math.min(100,e.kcal/P.kcal*100)}%" title="${esc(e.title)}"></i>`).join('');
   const share=t.kcal?Math.round(t.snackK/t.kcal*100):0;
   const eaten=Math.min(100,t.kcal/P.kcal*100);
+  const hint=(BACKEND&&isIOS()&&!isStandalone()&&!S.hintDone)?`<div class="note" style="margin-bottom:12px">${ico('info',18)}<span>${L('Добавьте Crumb на экран «Домой»: «Поделиться» → «На экран “Домой”». Так он открывается как обычное приложение и сможет присылать уведомления.','Add Crumb to your Home Screen: Share → Add to Home Screen. It then opens like a normal app and can send notifications.')}</span><button class="icon-btn" style="width:30px;height:30px;flex:none" data-act="hintDone" aria-label="${L('Закрыть','Close')}">${ico('x',14)}</button></div>`:'';
   return`<div class="top"><div><span class="eyebrow">${cap(T(DF[d.getDay()]))}, ${dm(d)}</span><h1 class="h1">${isToday?L('Сегодня','Today'):L('День','Day')}</h1></div>${st?`<span class="pill">${ico('flame',16)}${st} ${plDays(st)}</span>`:''}</div>
+  ${hint}
   <div class="days">${strip.join('')}</div>
   <div class="bento ${ani?'stag':''}">
    <div class="bt a" style="--i:0"><div><small>${over?L('Сверх нормы','Over the target'):L('Осталось','Left today')}</small><div class="n num" ${A('kc','count',Math.abs(left),0)}>${nf(Math.abs(left))}</div><small>${L('из','of')} ${nf(P.kcal)} ${u.kcal} · ${L('съедено','eaten')} ${nf(t.kcal)}</small></div><div class="bar"><i ${A('kb','width',(over?100:eaten)+'%','0%')} style="${over?'background:var(--ivory)':''}"></i></div></div>
@@ -1271,6 +1348,20 @@ async function sendCoach(text){
 }
 
 /* ---------- views: profile ---------- */
+function remindersBlock(sw){
+  const c=PUSH.cfg,sws=sw('water',L('О воде','Water'),L('В 11:00, 14:30 и 17:30','At 11:00, 14:30 and 17:30'))+sw('snack',L('О перекусах','Snacks'),L('В 20:30: всё ли записано','At 20:30: is everything logged'))+sw('weight',L('О весе','Weigh-in'),L('В воскресенье в 9:00','Sunday at 9:00'));
+  const note=t=>`<p class="sub" style="font-size:14px;margin-top:8px">${t}</p>`;
+  if(!BACKEND)return sws+note(L('Уведомления заработают в версии на вашем адресе, не внутри Claude.','Notifications work in the version on your own address, not inside Claude.'));
+  if(!c)return note(L('Проверяю…','Checking…'));
+  if(!c.enabled)return sws+note(L('Сервер уведомлений ещё не включён.','The notification server isn’t enabled yet.'));
+  if(!PUSH.supported){
+    if(isIOS()&&!isStandalone())return note(L('На iPhone уведомления работают только из приложения на экране «Домой». Нажмите «Поделиться» → «На экран “Домой”», откройте Crumb с экрана «Домой» и вернитесь сюда.','On iPhone notifications work only from the Home Screen app. Tap Share → Add to Home Screen, open Crumb from the Home Screen and come back here.'));
+    return note(L('Этот браузер не поддерживает уведомления.','This browser doesn’t support notifications.'));
+  }
+  if(!PUSH.sub)return `<button class="btn" style="margin-top:12px" data-act="pushOn" ${PUSH.busy?'disabled':''}>${L('Включить уведомления','Turn on notifications')}</button>${PUSH.err?`<div class="err" style="margin-top:10px">${esc(PUSH.err)}</div>`:''}${note(L('Напомним про воду, вечерние перекусы и взвешивание по времени вашего часового пояса.','We’ll remind you about water, evening snacks and weigh-ins on your own time zone.'))}`;
+  return sws+`<div class="row" style="margin-top:12px;flex-wrap:wrap"><button class="mini" data-act="pushTest">${L('Отправить тест','Send a test')}</button><button class="mini danger" data-act="pushOff">${L('Выключить','Turn off')}</button></div>`;
+}
+const BUILD='2026-10-26.1';
 function vProfile(ani){
   const p=S.profile,P=S.plan,u=U();
   const kv=(a,b)=>`<div class="kv"><span>${a}</span><b>${b}</b></div>`;
@@ -1288,10 +1379,10 @@ function vProfile(ani){
   <section class="card" style="--i:2"><span class="eyebrow">${L('Язык','Language')}</span><div class="seg" style="margin-top:10px"><button class="${S.lang==='ru'?'on':''}" data-act="lang" data-val="ru">Русский</button><button class="${S.lang==='en'?'on':''}" data-act="lang" data-val="en">English</button></div>
    <span class="eyebrow" style="display:block;margin-top:16px">${L('Оформление','Appearance')}</span><div class="seg" style="margin-top:10px">${[['orange',L('Оранжевая','Orange')],['night',L('Ночная','Night')]].map(o=>`<button class="${S.theme===o[0]?'on':''}" data-act="theme" data-val="${o[0]}">${o[1]}</button>`).join('')}</div></section>
   <section class="card" style="--i:3"><span class="eyebrow">${L('ИИ','AI')}</span><p class="sub" style="font-size:14px;margin-top:8px">${aiTxt}</p>${passBlock}${testBlock}</section>
-  <section class="card" style="--i:3"><span class="eyebrow">${L('Напоминания','Reminders')}</span>${sw('water',L('О воде','Water'),L('Жёсткий пинг, если вы отстаёте от графика','A firm nudge when you fall behind schedule'))}${sw('snack',L('О перекусах','Snacks'),L('Вечером спросим, всё ли записано','In the evening we’ll check that everything is logged'))}${sw('weight',L('О весе','Weigh-in'),L('Раз в неделю, утром в воскресенье','Weekly, Sunday morning'))}</section>
+  <section class="card" style="--i:3"><span class="eyebrow">${L('Напоминания','Reminders')}</span>${remindersBlock(sw)}</section>
   <section class="card soft" style="--i:4"><span class="eyebrow">${L('Дальше в планах','Coming next')}</span><ul class="dots" style="margin-top:10px"><li>${L('Штрихкоды и большая база продуктов','Barcodes and a big food database')}<span class="soon">${L('скоро','soon')}</span></li><li>${L('Apple Здоровье и шаги','Apple Health and steps')}<span class="soon">${L('скоро','soon')}</span></li><li>${L('Виджет и быстрая запись с экрана блокировки','Widget and quick logging from the lock screen')}<span class="soon">${L('скоро','soon')}</span></li><li>${L('Голосовой ввод','Voice input')}<span class="soon">${L('скоро','soon')}</span></li></ul></section>
   <section class="card" style="--i:5"><span class="eyebrow">${L('Данные','Data')}</span><p class="sub" style="font-size:14px;margin:8px 0 12px">${syncTxt}</p>
-   <div class="row" style="flex-wrap:wrap">${S.demo?'':`<button class="mini" data-act="demo">${L('Загрузить демо-данные','Load demo data')}</button>`}${confirmReset?`<button class="mini danger" data-act="resetDo">${L('Да, удалить всё','Yes, delete everything')}</button><button class="mini" data-act="resetAsk">${L('Отмена','Cancel')}</button>`:`<button class="mini danger" data-act="resetAsk">${L('Очистить данные','Clear data')}</button>`}</div></section>
+   <div class="row" style="flex-wrap:wrap">${S.demo?'':`<button class="mini" data-act="demo">${L('Загрузить демо-данные','Load demo data')}</button>`}${confirmReset?`<button class="mini danger" data-act="resetDo">${L('Да, удалить всё','Yes, delete everything')}</button><button class="mini" data-act="resetAsk">${L('Отмена','Cancel')}</button>`:`<button class="mini danger" data-act="resetAsk">${L('Очистить данные','Clear data')}</button>`}</div><p class="muted" style="font-size:12px;margin-top:12px">Crumb · ${BUILD}</p></section>
   </div>`;
 }
 
@@ -1372,7 +1463,7 @@ function weightBody(){
 const NUMKEYS=['workouts','sleep','stress','meals','water0'];
 const ACT={
  aiTest(){runAiTest()},
- savePass(){const v=(($('#passIn')||{}).value||'').trim();try{localStorage.setItem('crumb-pass',v)}catch(e){}toast(L('Код сохранён','Code saved'))},
+ savePass(){const v=(($('#passIn')||{}).value||'').trim();try{localStorage.setItem('crumb-pass',v)}catch(e){}toast(L('Код сохранён','Code saved'));SYNC=null;docRef=null;liveWatch=false;initSync();pushInit()},
  lang(t){S.lang=t.dataset.val==='en'?'en':'ru';save();confirmReset=false;if(sh)closeSheet();render()},
  obStart(){ob={step:'welcome'};D=newD();obNext()},
  obDemo(){loadDemo();ob=null;nav={tab:'home',day:todayKey()};render()},
@@ -1446,7 +1537,9 @@ const ACT={
  },
  sugg(t){sendCoach(t.dataset.t)},
  theme(t){S.theme=t.dataset.val==='night'?'night':'orange';save();applyTheme();renderMain({keep:true})},
- rem(t){S.rem[t.dataset.k]=!S.rem[t.dataset.k];save();t.classList.toggle('on',S.rem[t.dataset.k])},
+ rem(t){S.rem[t.dataset.k]=!S.rem[t.dataset.k];save();t.classList.toggle('on',S.rem[t.dataset.k]);if(PUSH.sub)navigator.serviceWorker.ready.then(r=>r.pushManager.getSubscription()).then(x=>x&&pushSync(x)).catch(()=>{})},
+ pushOn(){pushOn()},pushOff(){pushOff()},pushTest(){pushTest()},
+ hintDone(){S.hintDone=true;save();renderMain({keep:true})},
  redo(){S.onboarded=false;ob=null;D=Object.assign(newD(),JSON.parse(JSON.stringify(S.profile||{})));D.snacks=D.snacks||[];D.diet=D.diet||[];D.barriers=D.barriers||[];save();render()},
  demo(){loadDemo();nav={tab:'home',day:todayKey()};render()},
  resetAsk(){confirmReset=!confirmReset;renderMain({keep:true})},
@@ -1487,6 +1580,7 @@ document.addEventListener('keydown',e=>{
   if(e.key==='Escape'&&sh)closeSheet();
 });
 
+if('serviceWorker' in navigator&&!window.claude&&/^https?:$/.test(location.protocol)){window.addEventListener('load',()=>{navigator.serviceWorker.register('/sw.js').catch(()=>{})})}
 render();
 initSync();
 })();
