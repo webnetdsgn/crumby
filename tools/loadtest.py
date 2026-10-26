@@ -146,7 +146,8 @@ def report(started):
         errs = sum(1 for s, m in rows if s == 0 or s >= 500 or (s >= 400 and s != 429))
         lim = sum(1 for s, m in rows if s == 429)
         print('%-22s %6d %7d %7d %8.0f %8.0f %8.0f' % (name, len(rows), errs, lim, pct(ms, .5), pct(ms, .95), max(ms)))
-        if errs or pct(ms, .95) > 2500:
+        slow = 20000 if 'ИИ' in name else 2500            # ИИ по природе медленнее: для него порог 20 с
+        if errs or pct(ms, .95) > slow:
             bad_any = True
     print('\nВсего запросов: %d за %.1f с (%.1f в секунду).' % (total, dur, total / max(dur, .001)))
     codes = {}
@@ -160,7 +161,7 @@ def report(started):
             print('  %-24s код %s «%s» ×%d' % (name, code or '—', why, n))
         print('  (rate_limited: общий лимит запросов Gemini; limit_ip / limit_day / limit_global: лимиты самого приложения;')
         print('   upstream / timeout / empty: Gemini не ответил вовремя или отказал)')
-    print('Вывод:', 'есть ошибки или медленные ответы (p95 больше 2,5 с), смотрите таблицу' if bad_any else 'ошибок нет, ответы быстрые')
+    print('Вывод:', 'есть ошибки или медленные ответы (обычные запросы дольше 2,5 с, ИИ дольше 20 с), смотрите таблицу' if bad_any else 'ошибок нет, ответы быстрые')
 
 
 def main():
