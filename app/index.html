@@ -775,17 +775,48 @@ function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('on');clea
 
 /* ---------- AI ---------- */
 let SAMPLE=null,SAMPLE_IMG=false,IMG_TYPES='image/jpeg,image/png,image/webp';
-let BACKEND=false,HOME='';
+let BACKEND=false,HOME='',BKSTATE='unknown',BKTRY=0,BKTIMER=0;
 const getPass=()=>{try{return localStorage.getItem('crumb-pass')||''}catch(e){return''}};
+// Настоящий адрес: сервер должен быть. Один неудачный запуск (плохая связь, сбой DNS) не должен навсегда включать демо:
+// проверка повторяется сама, при возвращении в приложение, при появлении сети и перед каждым запросом к ИИ.
+const hosted=()=>!SAMPLE&&!window.claude&&/^https?:$/.test(location.protocol);
+// Выдуманные демо-ответы допустимы только в файле на диске и в режиме «Посмотреть пример с данными». На настоящем адресе их быть не должно.
+const mockOk=()=>!SAMPLE&&(!/^https?:$/.test(location.protocol)||!!S.demo);
 async function initBackend(){
-  if(SAMPLE||window.claude||!/^https?:$/.test(location.protocol))return;
-  try{const r=await fetch('/api/health',{cache:'no-store'});if(r.ok){const j=await r.json();BACKEND=!!(j&&j.ai);HOME=(j&&j.home)||''}}catch(e){BACKEND=false}
+  if(SAMPLE||window.claude||!/^https?:$/.test(location.protocol))return false;
+  const was=BACKEND;
+  try{
+    const ctl=new AbortController(),tm=setTimeout(()=>ctl.abort(),6000);
+    const r=await fetch('/api/health',{cache:'no-store',signal:ctl.signal});clearTimeout(tm);
+    if(r.ok){const j=await r.json();BACKEND=!!(j&&j.ai);HOME=(j&&j.home)||'';BKSTATE=BACKEND?'ok':'nokey'}
+    else{BACKEND=false;BKSTATE='offline'}
+  }catch(e){BACKEND=false;BKSTATE='offline'}
+  clearTimeout(BKTIMER);
+  if(BACKEND)BKTRY=0;else BKTIMER=setTimeout(backendUp,[3,8,20,45,90][Math.min(BKTRY++,4)]*1000);
+  return BACKEND&&!was;
 }
+async function backendUp(){
+  if(!await initBackend())return;
+  initSync();pushInit();
+  if(!S.onboarded&&ob&&ob.step==='welcome')render();
+  else if(S.onboarded&&!sh)renderMain({keep:true});
+}
+// true: настоящий ИИ через сервер; false: демо (только там, где оно допустимо); без связи: ошибка, а не выдуманный ответ.
+async function useReal(){
+  if(SAMPLE)return false;
+  if(BACKEND)return true;
+  await backendUp();
+  if(BACKEND)return true;
+  if(mockOk())return false;
+  throw{code:BKSTATE==='nokey'?'no_key':'offline'};
+}
+window.addEventListener('online',()=>{if(!BACKEND)backendUp()});
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&!BACKEND)backendUp()});
 (async()=>{
   try{
     SAMPLE=(await (window.claude&&window.claude.use?window.claude.use('sample'):null))||null;
     if(SAMPLE){const l=await SAMPLE.limits().catch(()=>null);if(l&&l.images){SAMPLE_IMG=true;IMG_TYPES=l.images.mediaTypes.join(',')}}
-    if(!SAMPLE){await initBackend();if(BACKEND){initSync();pushInit();if(!S.onboarded&&ob&&ob.step==='welcome')render()}}
+    if(!SAMPLE){if(await initBackend()){initSync();pushInit();if(!S.onboarded&&ob&&ob.step==='welcome')render()}}
     if(S.onboarded&&(nav.tab==='home'||nav.tab==='coach'||nav.tab==='profile')&&!sh)renderMain({keep:true});
   }catch(e){SAMPLE=null}
 })();
@@ -797,6 +828,7 @@ const aiErr=c=>({
   images_unavailable:L('Фото сейчас недоступно. Опишите еду словами.','Photos aren’t available right now. Describe the food in words.'),
   invalid_json:L('ИИ ответил не в том формате. Попробуйте ещё раз.','The AI replied in the wrong format. Try again.'),
   upstream_error:L('Сбой связи. Попробуйте ещё раз.','Connection problem. Try again.'),
+  offline:L('Нет связи с сервером. Проверьте интернет и повторите. Без сервера ответов нет, а выдумывать их я не буду.','No connection to the server. Check your internet and try again. Without the server there are no answers, and I won’t make any up.'),
   bad_token:L('Сессия истекла. Войдите в аккаунт заново.','Session expired. Sign in again.'),
   busy:L('Gemini сейчас перегружен. Повторите через минуту.','Gemini is overloaded right now. Try again in a minute.'),
   refused:L('ИИ не смог это оценить. Уточните описание.','The AI couldn’t estimate this. Clarify the description.'),
@@ -1021,8 +1053,8 @@ const ctxLine=()=>{const p=S.profile;return p&&p.diet&&p.diet.length&&!p.diet.in
 async function askFood(kind){
   sh.busy=true;sh.err='';paintSheet();startTicker();
   try{
-    let raw;
-    if(!SAMPLE&&BACKEND){
+    let raw;const real=await useReal();
+    if(!SAMPLE&&real){
       const ctl=sh.ctl=new AbortController();
       const diet=dietLabels();
       const body=kind==='photo'?{task:'food',lang:S.lang,diet,note:(sh.note||'').trim(),image:await imgPayload(sh.file)}:{task:'food',lang:S.lang,diet,text:sh.text.trim()};
@@ -1049,8 +1081,8 @@ async function askFix(text){
   if(!text||!text.trim()||sh.fixBusy)return;
   sh.fixBusy=true;sh.err='';paintSheet();
   try{
-    let raw;
-    if(!SAMPLE&&BACKEND){
+    let raw;const real=await useReal();
+    if(!SAMPLE&&real){
       const cur={title:sh.draft.title,items:sh.draft.items.map(i=>({name:i.name,grams:Math.round(i.grams*i.s),kcal:Math.round(i.kcal*i.s),p:i.p*i.s,f:i.f*i.s,c:i.c*i.s,sugar:i.sugar*i.s,fiber:i.fiber*i.s}))};
       raw=parseJSON(await aiCall({task:'food',lang:S.lang,diet:dietLabels(),previous:cur,fix:text.trim()}));
     }
@@ -1309,12 +1341,13 @@ function vHome(ani){
   const tape=ents.map(e=>`<i class="${e.type==='snack'?'sn':'ml'}" style="width:${Math.min(100,e.kcal/P.kcal*100)}%" title="${esc(e.title)}"></i>`).join('');
   const share=t.kcal?Math.round(t.snackK/t.kcal*100):0;
   const eaten=Math.min(100,t.kcal/P.kcal*100);
+  const offlineHint=(hosted()&&!BACKEND&&S.onboarded&&!mockOk())?`<div class="note warn" style="margin-bottom:12px">${ico('info',18)}<span>${BKSTATE==='nokey'?L('На сервере не настроен ключ ИИ: оценка еды и коуч недоступны.','The server has no AI key set: food estimates and the coach are unavailable.'):L('Нет связи с сервером: оценка еды и коуч сейчас недоступны. Записи сохраняются на устройстве.','No connection to the server: food estimates and the coach are unavailable right now. Entries are kept on this device.')} <button class="mini" style="margin-left:6px" data-act="retryBackend">${L('Повторить','Retry')}</button></span></div>`:'';
   let moveHint='';
   try{const to=HOME&&new URL(HOME);if(to&&to.origin!==location.origin&&!S.moveDone)moveHint=`<div class="note warn" style="margin-bottom:12px">${ico('info',18)}<span>${L(`У приложения новый адрес: <b>${esc(to.host)}</b>. ${getTok()?'Откройте его и войдите тем же логином и паролем.':'Создайте здесь аккаунт, затем войдите в нём на новом адресе: данные перенесутся.'}`,`The app has a new address: <b>${esc(to.host)}</b>. ${getTok()?'Open it and sign in with the same login and password.':'Create an account here, then sign in with it at the new address: your data will follow.'}`)} <a class="mini" style="display:inline-flex;align-items:center;margin-left:6px;text-decoration:none" href="${esc(to.origin)}/">${L('Открыть','Open')}</a></span><button class="icon-btn" style="width:30px;height:30px;flex:none" data-act="moveDone" aria-label="${L('Закрыть','Close')}">${ico('x',14)}</button></div>`}catch(e){}
   const accHint=(BACKEND&&!getTok()&&S.onboarded&&!S.accHintDone&&!S.demo)?`<div class="note" style="margin-bottom:12px">${ico('user',18)}<span>${L('Создайте аккаунт: цели, вес и продукты сохранятся в облаке и будут на любом телефоне.','Create an account: your goals, weight and foods are saved in the cloud and follow you to any phone.')} <button class="mini" style="margin-left:6px" data-act="authOpen" data-mode="register">${L('Создать','Create')}</button></span><button class="icon-btn" style="width:30px;height:30px;flex:none" data-act="accHintDone" aria-label="${L('Закрыть','Close')}">${ico('x',14)}</button></div>`:'';
   const hint=(BACKEND&&isIOS()&&!isStandalone()&&!S.hintDone)?`<div class="note" style="margin-bottom:12px">${ico('info',18)}<span>${L('Добавьте Crumb на экран «Домой»: «Поделиться» → «На экран “Домой”». Так он открывается как обычное приложение и сможет присылать уведомления.','Add Crumb to your Home Screen: Share → Add to Home Screen. It then opens like a normal app and can send notifications.')}</span><button class="icon-btn" style="width:30px;height:30px;flex:none" data-act="hintDone" aria-label="${L('Закрыть','Close')}">${ico('x',14)}</button></div>`:'';
   return`<div class="top"><div><span class="eyebrow">${cap(T(DF[d.getDay()]))}, ${dm(d)}</span><h1 class="h1">${isToday?L('Сегодня','Today'):L('День','Day')}</h1></div>${st?`<span class="pill">${ico('flame',16)}${st} ${plDays(st)}</span>`:''}</div>
-  ${moveHint||hint||accHint}
+  ${offlineHint||moveHint||hint||accHint}
   <div class="days"><i class="dpill"></i>${strip.join('')}</div>
   <div class="bento ${ani?'stag':''}">
    <div class="bt a" style="--i:0"><div><small>${over?L('Сверх нормы','Over the target'):L('Осталось','Left today')}</small><div class="n num" ${A('kc','count',Math.abs(left),0)}>${nf(Math.abs(left))}</div><small>${L('из','of')} ${nf(P.kcal)} ${u.kcal} · ${L('съедено','eaten')} ${nf(t.kcal)}</small></div><div class="bar"><i ${A('kb','width',(over?100:eaten)+'%','0%')} style="${over?'background:var(--ivory)':''}"></i></div></div>
@@ -1425,7 +1458,7 @@ function vCoach(){
   const msgs=S.chat.slice(-30);
   return`<div class="top"><div><span class="eyebrow">${L('ИИ-коуч · строгий режим','AI coach · strict mode')}</span><h1 class="h1">${L('Спросите про питание','Ask about nutrition')}</h1></div></div>
   <div class="msgs" id="msgs">${msgs.length?msgs.map(m=>`<div class="msg ${m.r==='u'?'me':'ai'}">${fmtMsg(m.c)}</div>`).join(''):`<div class="msg ai">${L('Я вижу ваш план и дневник. Спрашивайте по делу: что съесть, как не сорваться, что исправить в дне. Отвечу прямо, без утешений.','I see your plan and diary. Ask direct questions: what to eat, how not to slip, what to fix today. I’ll answer straight, no comfort talk.')}</div>
-   ${(SAMPLE||BACKEND)?'':'<div class="note">'+ico('info',18)+'<span>'+L('Коуч отвечает по-настоящему, когда прототип открыт внутри Claude. Сейчас показываются заготовленные ответы.','The coach answers for real when the prototype is open inside Claude. For now you get canned replies.')+'</span></div>'}`}</div>
+   ${(SAMPLE||BACKEND)?'':(hosted()&&!mockOk()?'<div class="note warn">'+ico('info',18)+'<span>'+L('Нет связи с сервером: коуч сейчас не отвечает. Я не показываю выдуманные ответы.','No connection to the server: the coach isn’t answering right now. I don’t show made-up replies.')+' <button class="mini" style="margin-left:6px" data-act="retryBackend">'+L('Повторить','Retry')+'</button></span></div>':'<div class="note">'+ico('info',18)+'<span>'+L('Коуч отвечает по-настоящему, когда прототип открыт внутри Claude. Сейчас показываются заготовленные ответы.','The coach answers for real when the prototype is open inside Claude. For now you get canned replies.')+'</span></div>')}`}</div>
   <div class="chiprow" style="padding-bottom:4px">${SUGG.map(s=>`<button class="chip sm" data-act="sugg" data-t="${esc(T(s))}">${esc(T(s))}</button>`).join('')}</div>
   <form class="composer" data-act-submit="send"><textarea id="coachIn" rows="1" placeholder="${L('Напишите вопрос','Type a question')}" aria-label="${L('Вопрос коучу','Question for the coach')}" data-in="coach"></textarea><button class="send" type="submit" aria-label="${L('Отправить','Send')}">${ico('send',20)}</button></form>`;
 }
@@ -1447,7 +1480,8 @@ async function sendCoach(text){
   $('#coachIn').value='';
   let ans='';
   try{
-    if(!SAMPLE&&BACKEND){
+    const real=await useReal();
+    if(!SAMPLE&&real){
       const msgs=[];S.chat.slice(-9).forEach(m=>{const role=m.r==='u'?'user':'model';if(msgs.length&&msgs[msgs.length-1].role===role)msgs[msgs.length-1].text+='\n'+m.c;else msgs.push({role,text:m.c})});
       while(msgs.length&&msgs[0].role!=='user')msgs.shift();
       const req={task:'coach',lang:S.lang,ctx:coachData(),messages:msgs.map(m=>({role:m.role,text:m.text}))};
@@ -1493,7 +1527,7 @@ function remindersBlock(sw){
   return sws+`<div class="row" style="margin-top:12px;flex-wrap:wrap"><button class="mini" data-act="pushTest">${L('Отправить тест','Send a test')}</button><button class="mini danger" data-act="pushOff">${L('Выключить','Turn off')}</button></div>`;
 }
 window.addEventListener('resize',()=>{placeTabPill(true);if(nav.tab==='home')placeDayPill()});
-const BUILD='2026-10-26.9';
+const BUILD='2026-10-30.1';
 function acctCard(kv,syncTxt){
   if(!BACKEND)return'';
   const row='<div class="row" style="margin-top:12px;gap:8px;flex-wrap:wrap">';
@@ -1505,8 +1539,8 @@ function vProfile(ani){
   const kv=(a,b)=>`<div class="kv"><span>${a}</span><b>${b}</b></div>`;
   const sw=(k,t,s)=>`<button class="switch ${S.rem[k]?'on':''}" data-act="rem" data-k="${k}"><span><b style="font-weight:700">${t}</b><br><small class="muted">${s}</small></span><span class="sw"></span></button>`;
   const syncTxt=getTok()&&!syncOn?L('Нет связи с облаком: данные сохраняются на устройстве и отправятся позже.','No connection to the cloud: data is kept on this device and will be sent later.'):syncOn?L(`Облачная синхронизация включена. Данные доступны на всех ваших устройствах${syncAt?' · '+new Date(syncAt).toLocaleTimeString(loc(),{hour:'2-digit',minute:'2-digit'}):''}.`,`Cloud sync is on. Your data follows you across devices${syncAt?' · '+new Date(syncAt).toLocaleTimeString(loc(),{hour:'2-digit',minute:'2-digit'}):''}.`):L('Синхронизация недоступна в этом окне, данные хранятся только на этом устройстве.','Sync isn’t available in this window, data stays on this device only.');
-  const aiTxt=SAMPLE?L('ИИ: Claude (прототип внутри claude.ai).','AI: Claude (prototype inside claude.ai).'):BACKEND?L('ИИ: Gemini, работает сразу, код не нужен. Личный код нужен только для синхронизации между устройствами и большего лимита.','AI: Gemini, works right away, no code needed. A personal code is only for syncing between devices and a higher limit.'):L('ИИ: примеры ответов, сервер Gemini не подключён.','AI: sample replies, the Gemini server isn’t connected.');
-  const testBlock=BACKEND?`<button class="btn ghost sm" style="margin-top:12px;width:100%" data-act="aiTest">${L('Проверить ИИ','Test the AI')}</button><pre id="aiTestOut" class="aitest"></pre>`:'';
+  const aiTxt=SAMPLE?L('ИИ: Claude (прототип внутри claude.ai).','AI: Claude (prototype inside claude.ai).'):(hosted()&&!BACKEND&&!mockOk())?L('ИИ: нет связи с сервером. Оценка еды и коуч не работают, выдуманных ответов нет.','AI: no connection to the server. Food estimates and the coach aren’t working; there are no made-up answers.'):BACKEND?L('ИИ: Gemini, работает сразу, код не нужен. Личный код нужен только для синхронизации между устройствами и большего лимита.','AI: Gemini, works right away, no code needed. A personal code is only for syncing between devices and a higher limit.'):L('ИИ: примеры ответов, сервер Gemini не подключён.','AI: sample replies, the Gemini server isn’t connected.');
+  const testBlock=(hosted()&&!BACKEND&&!mockOk())?`<button class="btn ghost sm" style="margin-top:12px;width:100%" data-act="retryBackend">${L('Повторить подключение','Retry the connection')}</button>`:BACKEND?`<button class="btn ghost sm" style="margin-top:12px;width:100%" data-act="aiTest">${L('Проверить ИИ','Test the AI')}</button><pre id="aiTestOut" class="aitest"></pre>`:'';
   const passBlock=BACKEND?`<div class="fix" style="margin-top:12px"><input id="passIn" type="password" autocomplete="off" value="${esc(getPass())}" placeholder="${L('Личный код (необязательно)','Personal code (optional)')}" aria-label="${L('Личный код','Personal code')}"><button class="btn sm" data-act="savePass">${L('Сохранить','Save')}</button></div>`:'';
   return`<div class="top"><div><span class="eyebrow">${L('Аккаунт','Account')}</span><h1 class="h1">${L('Профиль','Profile')}</h1></div></div>
   <div class="stack ${ani?'stag':''}">
@@ -1772,7 +1806,7 @@ function resultBody(){
   return`<div><input class="title-in" id="dTitle" data-in="title" value="${esc(d.title)}" aria-label="${L('Название','Name')}"></div>
   <div class="tot num"><b>${nf(tot.kcal)}<small>${u.kcal}</small></b><span class="conf"><span>${L('точность','confidence')}</span><i style="--c:${Math.round(d.conf*100)}%"></i></span></div>
   <div class="macros num" style="grid-template-columns:repeat(4,1fr);gap:8px;font-size:13px">${[[L('Белки','Protein'),tot.p],[L('Жиры','Fat'),tot.f],[L('Углеводы','Carbs'),tot.c],[L('Сахар','Sugar'),tot.sugar]].map(m=>`<div class="fact" style="padding:9px 10px"><small>${m[0]}</small><b style="font-size:15px">${nf(m[1])}<span>${u.g}</span></b></div>`).join('')}</div>
-  ${sh.demo?`<div class="note">${ico('info',18)}<span>${L('Это пример ответа: ИИ работает, когда прототип открыт внутри Claude.','This is a sample reply: AI works when the prototype is open inside Claude.')}</span></div>`:''}
+  ${sh.demo?`<div class="note">${ico('info',18)}<span>${(hosted()?L('Это просто пример, а не оценка вашей еды: включены демо-данные, а сервер сейчас недоступен.','This is only a sample, not an estimate of your food: demo data is on and the server is unreachable right now.'):L('Это пример ответа: ИИ работает, когда прототип открыт внутри Claude.','This is a sample reply: AI works when the prototype is open inside Claude.'))}</span></div>`:''}
   ${sh.err?`<div class="err">${esc(sh.err)}</div>`:''}
   ${d.note?`<div class="note">${ico('spark',18)}<span>${esc(d.note)}</span></div>`:''}
   <div class="stack" style="gap:8px">${d.items.map((it,i)=>`<div class="item"><div class="it"><b>${esc(it.name)}</b><small class="num">${it.grams?nf(it.grams*it.s)+' '+u.g+' · ':''}${L('Б','P')} ${nf(it.p*it.s)} · ${L('Ж','F')} ${nf(it.f*it.s)} · ${L('У','C')} ${nf(it.c*it.s)}</small></div><div class="stp num"><button data-act="itemMinus" data-i="${i}" aria-label="${L('Меньше','Less')}">−</button><b>${nf(it.kcal*it.s)}</b><button data-act="itemPlus" data-i="${i}" aria-label="${L('Больше','More')}">+</button><button data-act="itemDel" data-i="${i}" aria-label="${L('Убрать','Remove')}" style="background:transparent;color:var(--t3)">${ico('x',16)}</button></div></div>`).join('')}</div>
@@ -1804,6 +1838,7 @@ const ACT={
  acctSub(t){if(!sh)return;sh.sub=t.dataset.sub||null;sh.cp='';sh.np='';paintSheet()},
  acctPass(){acctPass()},acctRec(){acctRec()},acctDel(){acctDel()},
  logout(){(async()=>{try{await authApi('logout',{})}catch(e){}setSession('');dropSync();pushResync();toast(L('Вы вышли из аккаунта. Данные остались на этом устройстве.','Signed out. Your data stays on this device.'));if(S.onboarded)renderMain({keep:true});else render()})()},
+ retryBackend(){(async()=>{toast(L('Проверяю связь…','Checking the connection…'));await backendUp();toast(BACKEND?L('Связь есть','Connected'):L('Связи с сервером всё ещё нет','Still no connection'));if(!BACKEND&&S.onboarded&&!sh)renderMain({keep:true})})()},
  moveDone(){S.moveDone=true;save();renderMain({keep:true})},
  accHintDone(){S.accHintDone=true;save();renderMain({keep:true})},
  savePass(){const v=(($('#passIn')||{}).value||'').trim();try{localStorage.setItem('crumb-pass',v)}catch(e){}toast(L('Код сохранён','Code saved'));SYNC=null;docRef=null;liveWatch=false;initSync();pushInit()},
